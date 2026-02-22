@@ -1,0 +1,7 @@
+esc
+*.o
+*.out
+a.out
+linked_list
+primes
+src/*.o
