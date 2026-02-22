@@ -14,13 +14,13 @@ I have a degenerate idea to slop-gen language that only llm can comprehend and b
 
 * LLM writes compact programs
 
-* deterministic transpilers produce the bloat like html, js, css for web ui for example
-
 * Comptime, shamefully stolen idea from other modern languages
 
 * Emojis instead of keywords
 
 ## PoC TODO
+
+* deterministic transpilers produce the bloat like html, js, css for web ui for example
 
 * build a simple binary format for configuration
 
