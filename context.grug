@@ -1,0 +1,47 @@
+# el-stupido context — emoji tables in src/lexer.c (check_emoji, check_emoji_fn)
+
+📂 project
+🔑 name 👉 el-stupido
+🔑 desc 👉 emoji-first systems lang via LLVM
+🔑 binary 👉 esc
+🔑 ext 👉 .es
+🔑 impl 👉 C + LLVM-C 21 (opaque ptrs, new pass mgr)
+
+📂 build
+🔑 make 👉 make
+🔑 run 👉 ./esc input.es -o out [-O2]
+🔑 test 👉 ./esc examples/hello.es -o /tmp/hello && /tmp/hello
+🔑 deps 👉 LLVM 21, cc, llvm-config
+
+📂 lang
+🔑 emoji_tables 👉 src/lexer.c check_emoji() + check_emoji_fn()
+🔑 std_prelude 👉 lib/std.es auto-loaded, 75+ libc externs
+🔑 fn 👉 🔧 name(p: T) -> R { body }
+🔑 struct 👉 📦 Name { f: T }
+🔑 extern 👉 🔌 name(T) -> R
+🔑 var 👉 x := expr or x: T = expr
+🔑 ptr 👉 *T type, &x addr, *x deref, *(p+i) index
+🔑 array 👉 [N]T
+🔑 cast 👉 expr 🔄 T
+🔑 sizeof 👉 📏 T
+🔑 ufcs 👉 x.f(args) -> f(x, args)
+🔑 flow 👉 ❓/❗/❗❓ if/else/else-if, 🔁 while, 🛑/⏩ break/cont
+🔑 mem 👉 ✨ T malloc+cast, 🗑 x free
+🔑 null 👉 ptr 🔄 🔷 != 0
+🔑 ret 👉 implicit last-expr in non-void non-main fn
+🔑 main 👉 🏁() defaults -> 🔢, implicit ↩ 0
+🔑 comptime 👉 ⚡ expr folds int arith at compile time
+🔑 asm 👉 🔩("tmpl" : "=c"(out) : "c"(in) : "clobber")
+🔑 ops 👉 ternary ?:, compound += -= *= /= %=, ; separator
+
+📂 llvm_notes
+🔑 ptrs 👉 LLVMPointerTypeInContext(ctx, 0) everywhere
+🔑 typed_ops 👉 Load2/GEP2/Call2 need explicit type arg
+🔑 passes 👉 LLVMRunPasses(mod, "default<O2>", tm, opts)
+🔑 asm 👉 LLVMGetInlineAsm + LLVMBuildCall2
+🔑 float 👉 FAdd/FSub/FMul/FDiv, SIToFP/FPToSI
+
+📂 grug
+🔑 fmt 👉 📂 section, 🔑 key 👉 value, # comment
+🔑 parser 👉 examples/grug.es
+🔑 api 👉 grug_parse(path)->*Grug, grug_get(g,sec,key)->*u8
