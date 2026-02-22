@@ -1,0 +1,42 @@
+# el-stupido landing page
+
+📂 page
+🔑 title 👉 el-stupido
+🔑 lang 👉 en
+
+📂 style
+🔑 * 👉 margin:0;padding:0;box-sizing:border-box
+🔑 body 👉 font:16px/1.6 system-ui;background:#0d1117;color:#c9d1d9
+🔑 .wrap 👉 max-width:720px;margin:0 auto;padding:2rem
+🔑 h1 👉 color:#58a6ff;font-size:2.5rem
+🔑 h2 👉 color:#58a6ff;margin-top:2rem
+🔑 p 👉 margin:.5rem 0
+🔑 a 👉 color:#58a6ff;text-decoration:none
+🔑 a:hover 👉 text-decoration:underline
+🔑 code 👉 background:#161b22;padding:.2em .4em;border-radius:3px;font-size:.9em
+🔑 .feat 👉 display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0
+🔑 .feat div 👉 background:#161b22;padding:1rem;border-radius:8px;border:1px solid #30363d
+🔑 footer 👉 margin-top:3rem;padding-top:1rem;border-top:1px solid #30363d;color:#8b949e
+
+📂 header.wrap
+🔑 h1 👉 el-stupido
+🔑 p 👉 emoji-first systems programming language compiled via LLVM
+
+📂 main.wrap
+🔑 h2 👉 Features
+🔑 div.feat 👉
+🔑 p 👉 All keywords, types, and stdlib are emojis
+🔑 p 👉 Compiles to native code via LLVM 21
+🔑 p 👉 Manual memory management with ✨/🗑
+🔑 p 👉 Inline assembly with 🔩
+🔑 h2 👉 Quick Start
+🔑 code 👉 🏁() { 🖨("Hello!\\n") }
+🔑 p 👉 Compile and run:
+🔑 code 👉 ./esc hello.es -o hello && ./hello
+🔑 a 👉 View on GitHub|https://github.com/makefunstuff/el-stupido
+
+📂 footer.wrap
+🔑 p 👉 built with el-stupido gruweb transpiler
+
+📂 script
+🔑 0 👉 console.log('page loaded')
