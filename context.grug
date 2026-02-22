@@ -1,47 +1,27 @@
-# el-stupido context — emoji tables in src/lexer.c (check_emoji, check_emoji_fn)
+# el-stupido project manifest
+# 📂 mem values are shell commands — run one for on-demand context
 
 📂 project
 🔑 name 👉 el-stupido
-🔑 desc 👉 emoji-first systems lang via LLVM
-🔑 binary 👉 esc
+🔑 desc 👉 emoji-first systems lang, C compiler, LLVM-C 21
+🔑 bin 👉 esc
 🔑 ext 👉 .es
-🔑 impl 👉 C + LLVM-C 21 (opaque ptrs, new pass mgr)
-
-📂 build
-🔑 make 👉 make
+🔑 build 👉 make
 🔑 run 👉 ./esc input.es -o out [-O2]
-🔑 test 👉 ./esc examples/hello.es -o /tmp/hello && /tmp/hello
-🔑 deps 👉 LLVM 21, cc, llvm-config
 
 📂 lang
-🔑 emoji_tables 👉 src/lexer.c check_emoji() + check_emoji_fn()
-🔑 std_prelude 👉 lib/std.es auto-loaded, 75+ libc externs
-🔑 fn 👉 🔧 name(p: T) -> R { body }
-🔑 struct 👉 📦 Name { f: T }
-🔑 extern 👉 🔌 name(T) -> R
-🔑 var 👉 x := expr or x: T = expr
-🔑 ptr 👉 *T type, &x addr, *x deref, *(p+i) index
-🔑 array 👉 [N]T
-🔑 cast 👉 expr 🔄 T
-🔑 sizeof 👉 📏 T
-🔑 ufcs 👉 x.f(args) -> f(x, args)
-🔑 flow 👉 ❓/❗/❗❓ if/else/else-if, 🔁 while, 🛑/⏩ break/cont
-🔑 mem 👉 ✨ T malloc+cast, 🗑 x free
-🔑 null 👉 ptr 🔄 🔷 != 0
-🔑 ret 👉 implicit last-expr in non-void non-main fn
-🔑 main 👉 🏁() defaults -> 🔢, implicit ↩ 0
-🔑 comptime 👉 ⚡ expr folds int arith at compile time
-🔑 asm 👉 🔩("tmpl" : "=c"(out) : "c"(in) : "clobber")
-🔑 ops 👉 ternary ?:, compound += -= *= /= %=, ; separator
+🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link
+🔑 features 👉 emoji kw/types/stdlib, structs, ptrs, UFCS, ✨/🗑 mem, ⚡comptime, 🔩asm
+🔑 std 👉 lib/std.es auto-loaded, no import needed
+🔑 llvm 👉 opaque ptrs: Load2/GEP2/Call2 need explicit type, PointerType(ctx,0)
+🔑 no_short_circuit 👉 && and || evaluate both sides — use nested ❓ for null guards
 
-📂 llvm_notes
-🔑 ptrs 👉 LLVMPointerTypeInContext(ctx, 0) everywhere
-🔑 typed_ops 👉 Load2/GEP2/Call2 need explicit type arg
-🔑 passes 👉 LLVMRunPasses(mod, "default<O2>", tm, opts)
-🔑 asm 👉 LLVMGetInlineAsm + LLVMBuildCall2
-🔑 float 👉 FAdd/FSub/FMul/FDiv, SIToFP/FPToSI
-
-📂 grug
-🔑 fmt 👉 📂 section, 🔑 key 👉 value, # comment
-🔑 parser 👉 examples/grug.es
-🔑 api 👉 grug_parse(path)->*Grug, grug_get(g,sec,key)->*u8
+📂 mem
+🔑 emoji_kw 👉 sed -n '/^static TokenKind check_emoji/,/^}/p' src/lexer.c
+🔑 emoji_fn 👉 sed -n '/^static const char \*check_emoji_fn/,/^}/p' src/lexer.c
+🔑 tokens 👉 grep TOK_ src/lexer.h
+🔑 ast 👉 grep -E 'ND_|ES_TY' src/ast.h
+🔑 syntax 👉 cat spec/grammar.peg
+🔑 std 👉 cat lib/std.es
+🔑 examples 👉 ls examples/ && ls tools/
+🔑 grugmem 👉 grugmem dump

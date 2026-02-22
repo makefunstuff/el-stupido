@@ -77,6 +77,7 @@
 🔌 execvp(*🔶, **🔶) -> 🔢
 🔌 waitpid(🔢, *🔢, 🔢) -> 🔢
 🔌 getpid() -> 🔢
+🔌 getenv(*🔶) -> *🔶
 🔌 sleep(🔵) -> 🔵
 🔌 usleep(🔵) -> 🔢
 
