@@ -3,6 +3,13 @@
 This is only file written by human.
 I have a degenerate idea to slop-gen language that only llm can comprehend and build programs with it.
 
+
+## How to helloworld?
+
+```
+🏁(){🖨("Hello, World!\n")}
+```
+
 ## What is here?
 
 * LLM writes compact programs
