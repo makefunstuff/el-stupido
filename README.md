@@ -18,6 +18,10 @@ I have a degenerate idea to slop-gen language that only llm can comprehend and b
 
 * Emojis instead of keywords
 
+## It can do web 
+<img width="939" height="739" alt="image" src="https://github.com/user-attachments/assets/5d8f1029-b609-4e28-9703-711a1d9ae3e8" />
+
+
 ## PoC TODO
 
 * deterministic transpilers produce the bloat like html, js, css for web ui for example
