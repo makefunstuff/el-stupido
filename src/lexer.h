@@ -9,6 +9,7 @@ typedef enum {
     TOK_ST, TOK_USE, TOK_AS, TOK_SZ, TOK_NULL_KW,
     TOK_BRK, TOK_CONT, TOK_NW, TOK_DEL,
     TOK_ASM, TOK_CT,
+    TOK_FOR, TOK_MATCH, TOK_ENUM, TOK_DEFER,
 
     /* type keywords */
     TOK_I8, TOK_I16, TOK_I32, TOK_I64,
@@ -40,6 +41,7 @@ typedef enum {
     TOK_ARROW,         /* -> */
     TOK_DOT,           /* . */
     TOK_ELLIPSIS,      /* ... */
+    TOK_RANGE,         /* .. */
     TOK_COMMA,         /* , */
 
     /* delimiters */

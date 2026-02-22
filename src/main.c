@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "sexpr.h"
 #include "codegen.h"
+#include "preproc.h"
 
 static void usage(void) {
     fprintf(stderr, "usage: esc <input.es> [-o <output>] [-O<level>] [--emit-ir]\n");
@@ -37,9 +38,13 @@ int main(int argc, char **argv) {
     if (!input) usage();
 
     /* read source */
-    char *src = es_read_file(input);
+    char *raw = es_read_file(input);
 
-    /* parse — detect front-end by file extension */
+    /* preprocess: expand 📎 macros before parsing */
+    char *src = preprocess(raw);
+    if (src != raw) free(raw);
+
+    /* parse -- detect front-end by file extension */
     Node *program;
     const char *dot = strrchr(input, '.');
     if (dot && strcmp(dot, ".el") == 0) {

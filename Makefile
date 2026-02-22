@@ -2,7 +2,7 @@ CC = cc
 CFLAGS = $(shell llvm-config --cflags) -Wall -Wextra -g -Isrc -Wno-unused-parameter
 LDFLAGS = $(shell llvm-config --ldflags --libs core analysis native) $(shell llvm-config --system-libs)
 
-SRCS = src/main.c src/lexer.c src/ast.c src/parser.c src/codegen.c src/sexpr.c
+SRCS = src/main.c src/lexer.c src/ast.c src/parser.c src/codegen.c src/sexpr.c src/preproc.c
 OBJS = $(SRCS:.c=.o)
 
 esc: $(OBJS)

@@ -11,10 +11,33 @@
 
 📂 lang
 🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link
-🔑 features 👉 emoji kw/types/stdlib, structs, ptrs, UFCS, ✨/🗑 mem, ⚡comptime, 🔩asm
+🔑 features 👉 emoji kw/types/stdlib, structs, ptrs, UFCS, ✨/🗑 mem, ⚡comptime, 🔩asm, 📎macros
+🔑 new_features 👉 ➰for, 🎯match, 🏷enum, 🔜defer, fn ptrs, struct init ✨T{}, short-circuit &&/||
 🔑 std 👉 lib/std.es auto-loaded, no import needed
 🔑 llvm 👉 opaque ptrs: Load2/GEP2/Call2 need explicit type, PointerType(ctx,0)
-🔑 no_short_circuit 👉 && and || evaluate both sides — use nested ❓ for null guards
+🔑 short_circuit 👉 && and || are short-circuit (phi nodes), safe for null guards
+🔑 macros 👉 ⚡ NAME(p) 👉 body — unified with comptime, 👉 = macro def, no 👉 = eval
+🔑 kw_fixed 👉 v/st/sz removed as ASCII keywords — use ⬛/📦/📏 emoji versions
+🔑 unsigned 👉 🔵(u32)/💎(u64) now use UDiv/URem/LShr/unsigned comparisons
+🔑 ptr_diff 👉 ptr - ptr yields i64 integer via ptrtoint subtraction
+
+📂 syntax_quick
+🔑 for_loop 👉 ➰ i := 0..10 { body }
+🔑 match 👉 🎯 expr { val { body } _ { default } }
+🔑 enum 👉 🏷 Name { A; B; C=5; D }
+🔑 struct_init 👉 p := ✨ T { field: val, ... }
+🔑 fn_ptr_type 👉 *🔧(🔢,🔢)->🔢
+🔑 defer 👉 🔜 stmt — runs in reverse at function return
+🔑 import 👉 📥 name — loads lib/<name>.es
+
+📂 preludes
+🔑 std 👉 lib/std.es — libc externs (printf,malloc,socket,fork,math,...) auto-loaded
+🔑 grug 👉 lib/grug.es — .grug CRUD (parse/query/mutate/write/free), ~120 LOC
+🔑 str 👉 lib/str.es — string builder: str_new/str_add/str_addc/str_fmt/str_get/str_len/str_clear/str_fr
+🔑 vec 👉 lib/vec.es — dynamic array (void* elems): vec_new/vec_push/vec_get/vec_pop/vec_len/vec_fr
+🔑 map 👉 lib/map.es — string->string hashmap: map_new/map_set/map_get/map_del/map_len/map_fr
+🔑 http 👉 lib/http.es — HTTP server: http_listen/http_resp/http_send/http_path/http_fval/http_hesc/http_udec
+🔑 ws 👉 lib/ws.es — WebSocket server (RFC 6455): sha1/b64_enc/ws_handshake/ws_read/ws_send/ws_text/ws_close
 
 📂 mem
 🔑 emoji_kw 👉 sed -n '/^static TokenKind check_emoji/,/^}/p' src/lexer.c
@@ -25,3 +48,8 @@
 🔑 std 👉 cat lib/std.es
 🔑 examples 👉 ls examples/ && ls tools/
 🔑 grugmem 👉 grugmem dump
+
+📂 tools
+🔑 grugmem 👉 KV store CLI (~33 LOC, uses 📥 grug)
+🔑 gruweb 👉 .grug → HTML+CSS+JS transpiler (~81 LOC, uses 📥 grug)
+🔑 grugbook 👉 guestbook web app: fork-per-conn HTTP, .grug persistence (~100 LOC, uses 📥 grug)

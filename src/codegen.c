@@ -37,6 +37,10 @@ typedef struct {
     /* loop control flow for break/continue */
     LLVMBasicBlockRef loop_cond_bb;   /* continue target */
     LLVMBasicBlockRef loop_end_bb;    /* break target */
+
+    /* defer stack */
+    Node *defers[64];
+    int defer_count;
 } CG;
 
 /* ---- symbol table ---- */
@@ -115,6 +119,18 @@ static LLVMTypeRef build_fn_type(CG *g, EsType *ret, Param *params, int pc, bool
 /* ---- type helpers ---- */
 static bool is_float_kind(LLVMTypeKind k) {
     return k == LLVMFloatTypeKind || k == LLVMDoubleTypeKind;
+}
+
+/* ---- bool conversion helper ---- */
+static LLVMValueRef to_bool(CG *g, LLVMValueRef val) {
+    LLVMTypeKind k = LLVMGetTypeKind(LLVMTypeOf(val));
+    if (k == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(LLVMTypeOf(val)) == 1)
+        return val;
+    if (is_float_kind(k))
+        return LLVMBuildFCmp(g->bld, LLVMRealONE, val,
+                   LLVMConstReal(LLVMTypeOf(val), 0.0), "tobool");
+    return LLVMBuildICmp(g->bld, LLVMIntNE, val,
+               LLVMConstInt(LLVMTypeOf(val), 0, 0), "tobool");
 }
 
 /* ---- type coercion ---- */
@@ -213,6 +229,7 @@ static EsType *infer_expr_type(CG *g, Node *n) {
     }
     case ND_TERNARY: return infer_expr_type(g, n->ternary.then_expr);
     case ND_SIZEOF: return type_basic(TY_I64);
+    case ND_STRUCT_INIT: return type_ptr(n->struct_init.stype);
     default: return type_basic(TY_I32);
     }
 }
@@ -303,6 +320,33 @@ static LLVMValueRef cg_call(CG *g, Node *n) {
     if (callee->kind == ND_IDENT) {
         sym = sym_lookup(g, callee->ident.name);
         if (!sym) es_fatal("undefined function '%s'", callee->ident.name);
+        /* function pointer variable: *fn(...) -> ret */
+        if (!sym->llvm_fn_type && sym->type &&
+            sym->type->kind == TY_PTR && sym->type->ptr.base &&
+            sym->type->ptr.base->kind == TY_FN) {
+            EsType *ft = sym->type->ptr.base;
+            LLVMTypeRef *pt = NULL;
+            if (ft->fn.param_count > 0) {
+                pt = (LLVMTypeRef *)malloc(ft->fn.param_count * sizeof(LLVMTypeRef));
+                for (int i = 0; i < ft->fn.param_count; i++) pt[i] = es_to_llvm(g, ft->fn.params[i]);
+            }
+            LLVMTypeRef fnt = LLVMFunctionType(es_to_llvm(g, ft->fn.ret), pt, ft->fn.param_count, ft->fn.is_vararg);
+            free(pt);
+            LLVMValueRef fp = LLVMBuildLoad2(g->bld, LLVMPointerTypeInContext(g->ctx, 0), sym->value, "fp");
+            int argc = n->call.arg_count;
+            LLVMValueRef *args = (LLVMValueRef *)malloc(argc * sizeof(LLVMValueRef));
+            for (int i = 0; i < argc; i++) {
+                args[i] = cg_expr(g, n->call.args[i]);
+                if (i < ft->fn.param_count && ft->fn.params[i])
+                    args[i] = coerce(g, args[i], es_to_llvm(g, ft->fn.params[i]));
+            }
+            LLVMTypeRef ret_llvm = LLVMGetReturnType(fnt);
+            const char *cname = (LLVMGetTypeKind(ret_llvm) == LLVMVoidTypeKind) ? "" : "fpcall";
+            LLVMValueRef result = LLVMBuildCall2(g->bld, fnt, fp, args, argc, cname);
+            n->type = ft->fn.ret;
+            free(args);
+            return result;
+        }
     } else if (callee->kind == ND_FIELD) {
         /* UFCS: obj.func(args) -> func(obj, args) */
         /* first check if func is a known function */
@@ -399,6 +443,33 @@ static LLVMValueRef cg_expr(CG *g, Node *n) {
     }
 
     case ND_BINARY: {
+        /* short-circuit &&/|| — RHS evaluated conditionally */
+        if (n->binary.op == TOK_LAND || n->binary.op == TOK_LOR) {
+            LLVMValueRef lv = cg_expr(g, n->binary.left);
+            LLVMValueRef lb = to_bool(g, lv);
+            LLVMBasicBlockRef entry_bb = LLVMGetInsertBlock(g->bld);
+            LLVMBasicBlockRef rhs_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "sc.rhs");
+            LLVMBasicBlockRef merge_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "sc.end");
+            if (n->binary.op == TOK_LAND)
+                LLVMBuildCondBr(g->bld, lb, rhs_bb, merge_bb);
+            else
+                LLVMBuildCondBr(g->bld, lb, merge_bb, rhs_bb);
+            LLVMPositionBuilderAtEnd(g->bld, rhs_bb);
+            LLVMValueRef rv = cg_expr(g, n->binary.right);
+            LLVMValueRef rb = to_bool(g, rv);
+            LLVMBasicBlockRef rhs_end = LLVMGetInsertBlock(g->bld);
+            LLVMBuildBr(g->bld, merge_bb);
+            LLVMPositionBuilderAtEnd(g->bld, merge_bb);
+            LLVMValueRef phi = LLVMBuildPhi(g->bld, LLVMInt1TypeInContext(g->ctx), "sc");
+            LLVMValueRef sv = LLVMConstInt(LLVMInt1TypeInContext(g->ctx),
+                n->binary.op == TOK_LAND ? 0 : 1, 0);
+            LLVMValueRef vals[2] = { sv, rb };
+            LLVMBasicBlockRef bbs[2] = { entry_bb, rhs_end };
+            LLVMAddIncoming(phi, vals, bbs, 2);
+            n->type = type_basic(TY_I32);
+            return phi;
+        }
+
         LLVMValueRef left = cg_expr(g, n->binary.left);
         LLVMValueRef right = cg_expr(g, n->binary.right);
         LLVMTypeRef lt = LLVMTypeOf(left), rt = LLVMTypeOf(right);
@@ -429,9 +500,19 @@ static LLVMValueRef cg_expr(CG *g, Node *n) {
 
         n->type = n->binary.left->type ? n->binary.left->type : infer_expr_type(g, n->binary.left);
 
-        /* pointer arithmetic: ptr + int -> GEP, ptr - int -> GEP(neg) */
+        /* pointer arithmetic */
         if (lk == LLVMPointerTypeKind &&
             (n->binary.op == TOK_PLUS || n->binary.op == TOK_MINUS)) {
+            LLVMTypeKind rk = LLVMGetTypeKind(LLVMTypeOf(right));
+            /* ptr - ptr -> integer difference */
+            if (n->binary.op == TOK_MINUS && rk == LLVMPointerTypeKind) {
+                LLVMTypeRef i64t = LLVMInt64TypeInContext(g->ctx);
+                LLVMValueRef li = LLVMBuildPtrToInt(g->bld, left, i64t, "lp2i");
+                LLVMValueRef ri = LLVMBuildPtrToInt(g->bld, right, i64t, "rp2i");
+                n->type = type_basic(TY_I64);
+                return LLVMBuildSub(g->bld, li, ri, "ptrdiff");
+            }
+            /* ptr +/- int -> GEP */
             EsType *ptr_ty = n->binary.left->type;
             EsType *elem_ty = (ptr_ty && ptr_ty->kind == TY_PTR) ? ptr_ty->ptr.base : type_basic(TY_U8);
             LLVMTypeRef elem_llvm = es_to_llvm(g, elem_ty);
@@ -465,36 +546,30 @@ static LLVMValueRef cg_expr(CG *g, Node *n) {
             }
         }
 
-        /* integer binary ops */
+        /* integer binary ops — unsigned-aware for div/rem/shift/cmp */
+        int is_unsigned = n->type && (n->type->kind == TY_U8 || n->type->kind == TY_U16 ||
+                                      n->type->kind == TY_U32 || n->type->kind == TY_U64);
         switch (n->binary.op) {
         case TOK_PLUS:    return LLVMBuildAdd(g->bld, left, right, "add");
         case TOK_MINUS:   return LLVMBuildSub(g->bld, left, right, "sub");
         case TOK_STAR:    return LLVMBuildMul(g->bld, left, right, "mul");
-        case TOK_SLASH:   return LLVMBuildSDiv(g->bld, left, right, "div");
-        case TOK_PERCENT: return LLVMBuildSRem(g->bld, left, right, "rem");
+        case TOK_SLASH:   return is_unsigned ? LLVMBuildUDiv(g->bld, left, right, "udiv")
+                                             : LLVMBuildSDiv(g->bld, left, right, "div");
+        case TOK_PERCENT: return is_unsigned ? LLVMBuildURem(g->bld, left, right, "urem")
+                                             : LLVMBuildSRem(g->bld, left, right, "rem");
         case TOK_EQ:  n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntEQ, left, right, "eq");
         case TOK_NEQ: n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntNE, left, right, "ne");
-        case TOK_LT:  n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntSLT, left, right, "lt");
-        case TOK_GT:  n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntSGT, left, right, "gt");
-        case TOK_LEQ: n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntSLE, left, right, "le");
-        case TOK_GEQ: n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, LLVMIntSGE, left, right, "ge");
+        case TOK_LT:  n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, is_unsigned ? LLVMIntULT : LLVMIntSLT, left, right, "lt");
+        case TOK_GT:  n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, is_unsigned ? LLVMIntUGT : LLVMIntSGT, left, right, "gt");
+        case TOK_LEQ: n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, is_unsigned ? LLVMIntULE : LLVMIntSLE, left, right, "le");
+        case TOK_GEQ: n->type = type_basic(TY_I32); return LLVMBuildICmp(g->bld, is_unsigned ? LLVMIntUGE : LLVMIntSGE, left, right, "ge");
         case TOK_AMP:   return LLVMBuildAnd(g->bld, left, right, "and");
         case TOK_PIPE:  return LLVMBuildOr(g->bld, left, right, "or");
         case TOK_CARET: return LLVMBuildXor(g->bld, left, right, "xor");
         case TOK_SHL:   return LLVMBuildShl(g->bld, left, right, "shl");
-        case TOK_SHR:   return LLVMBuildAShr(g->bld, left, right, "shr");
-        case TOK_LAND: {
-            left = LLVMBuildICmp(g->bld, LLVMIntNE, left, LLVMConstInt(LLVMTypeOf(left), 0, 0), "lb");
-            right = LLVMBuildICmp(g->bld, LLVMIntNE, right, LLVMConstInt(LLVMTypeOf(right), 0, 0), "rb");
-            n->type = type_basic(TY_I32);
-            return LLVMBuildAnd(g->bld, left, right, "land");
-        }
-        case TOK_LOR: {
-            left = LLVMBuildICmp(g->bld, LLVMIntNE, left, LLVMConstInt(LLVMTypeOf(left), 0, 0), "lb");
-            right = LLVMBuildICmp(g->bld, LLVMIntNE, right, LLVMConstInt(LLVMTypeOf(right), 0, 0), "rb");
-            n->type = type_basic(TY_I32);
-            return LLVMBuildOr(g->bld, left, right, "lor");
-        }
+        case TOK_SHR:   return is_unsigned ? LLVMBuildLShr(g->bld, left, right, "lshr")
+                                           : LLVMBuildAShr(g->bld, left, right, "shr");
+        /* TOK_LAND/TOK_LOR handled above with short-circuit */
         default:
             es_fatal("unsupported binary op %s", tok_str(n->binary.op));
             return NULL;
@@ -584,6 +659,34 @@ static LLVMValueRef cg_expr(CG *g, Node *n) {
         return phi;
     }
 
+    case ND_STRUCT_INIT: {
+        /* ✨ T { f: v, ... } → alloc + field stores, return pointer */
+        EsType *sty = n->struct_init.stype;
+        StructDef *sd = struct_lookup(g, sty->strct.name);
+        if (!sd) es_fatal("undefined struct '%s'", sty->strct.name);
+        /* malloc(sizeof(T)) */
+        LLVMValueRef sz = LLVMSizeOf(sd->llvm_type);
+        struct Symbol *mal = sym_lookup(g, "malloc");
+        if (!mal) es_fatal("struct init requires malloc (use std)");
+        LLVMValueRef args[1] = { sz };
+        LLVMValueRef ptr = LLVMBuildCall2(g->bld, mal->llvm_fn_type, mal->value, args, 1, "sinit");
+        /* store each field */
+        for (int i = 0; i < n->struct_init.field_count; i++) {
+            int fi = struct_field_index(sd, n->struct_init.fields[i]);
+            if (fi < 0) es_fatal("struct '%s' has no field '%s'", sd->name, n->struct_init.fields[i]);
+            LLVMValueRef indices[2] = {
+                LLVMConstInt(LLVMInt32TypeInContext(g->ctx), 0, 0),
+                LLVMConstInt(LLVMInt32TypeInContext(g->ctx), fi, 0)
+            };
+            LLVMValueRef fp = LLVMBuildGEP2(g->bld, sd->llvm_type, ptr, indices, 2, "fip");
+            LLVMValueRef val = cg_expr(g, n->struct_init.vals[i]);
+            val = coerce(g, val, es_to_llvm(g, sd->field_types[fi]));
+            LLVMBuildStore(g->bld, val, fp);
+        }
+        n->type = type_ptr(sty);
+        return ptr;
+    }
+
     case ND_SIZEOF: {
         n->type = type_basic(TY_I64);
         LLVMTypeRef st = es_to_llvm(g, n->size_of.target);
@@ -664,14 +767,18 @@ static void cg_block(CG *g, Node *n) {
 static void cg_stmt(CG *g, Node *n) {
     switch (n->kind) {
     case ND_RET: {
+        LLVMValueRef retval = NULL;
         if (n->ret.value) {
-            LLVMValueRef val = cg_expr(g, n->ret.value);
-            /* coerce return value to match function return type */
-            val = coerce(g, val, es_to_llvm(g, g->cur_ret_type));
-            LLVMBuildRet(g->bld, val);
-        } else {
-            LLVMBuildRetVoid(g->bld);
+            retval = cg_expr(g, n->ret.value);
+            retval = coerce(g, retval, es_to_llvm(g, g->cur_ret_type));
         }
+        /* emit defers in reverse order before returning */
+        for (int di = g->defer_count - 1; di >= 0; di--)
+            cg_stmt(g, g->defers[di]);
+        if (retval)
+            LLVMBuildRet(g->bld, retval);
+        else
+            LLVMBuildRetVoid(g->bld);
         break;
     }
 
@@ -787,6 +894,34 @@ static void cg_stmt(CG *g, Node *n) {
         LLVMBuildBr(g->bld, g->loop_cond_bb);
         break;
 
+    case ND_FOR: {
+        cg_stmt(g, n->for_stmt.init);
+        LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "fo.cond");
+        LLVMBasicBlockRef body_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "fo.body");
+        LLVMBasicBlockRef incr_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "fo.incr");
+        LLVMBasicBlockRef end_bb  = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "fo.end");
+        LLVMBasicBlockRef prev_cond = g->loop_cond_bb;
+        LLVMBasicBlockRef prev_end  = g->loop_end_bb;
+        g->loop_cond_bb = incr_bb;   /* continue → increment */
+        g->loop_end_bb  = end_bb;    /* break → end */
+        LLVMBuildBr(g->bld, cond_bb);
+        LLVMPositionBuilderAtEnd(g->bld, cond_bb);
+        LLVMValueRef fc = cg_expr(g, n->for_stmt.cond);
+        LLVMValueRef fb = to_bool(g, fc);
+        LLVMBuildCondBr(g->bld, fb, body_bb, end_bb);
+        LLVMPositionBuilderAtEnd(g->bld, body_bb);
+        cg_block(g, n->for_stmt.body);
+        if (!LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(g->bld)))
+            LLVMBuildBr(g->bld, incr_bb);
+        LLVMPositionBuilderAtEnd(g->bld, incr_bb);
+        cg_stmt(g, n->for_stmt.incr);
+        LLVMBuildBr(g->bld, cond_bb);
+        g->loop_cond_bb = prev_cond;
+        g->loop_end_bb  = prev_end;
+        LLVMPositionBuilderAtEnd(g->bld, end_bb);
+        break;
+    }
+
     case ND_INLINE_ASM: {
         /* Build constraint string: "outputs,inputs,~clobbers" */
         int total_len = 1;
@@ -879,6 +1014,45 @@ static void cg_stmt(CG *g, Node *n) {
         break;
     }
 
+    case ND_MATCH: {
+        /* 🎯 expr { val { body } ... _ { body } } → if-else chain */
+        LLVMValueRef mval = cg_expr(g, n->match_stmt.expr);
+        LLVMBasicBlockRef end_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "ma.end");
+        for (int i = 0; i < n->match_stmt.case_count; i++) {
+            if (!n->match_stmt.case_vals[i]) {
+                /* default case — just emit body */
+                cg_block(g, n->match_stmt.case_bodies[i]);
+                if (!LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(g->bld)))
+                    LLVMBuildBr(g->bld, end_bb);
+            } else {
+                LLVMValueRef cv = cg_expr(g, n->match_stmt.case_vals[i]);
+                cv = coerce(g, cv, LLVMTypeOf(mval));
+                LLVMValueRef eq;
+                if (is_float_kind(LLVMGetTypeKind(LLVMTypeOf(mval))))
+                    eq = LLVMBuildFCmp(g->bld, LLVMRealOEQ, mval, cv, "meq");
+                else
+                    eq = LLVMBuildICmp(g->bld, LLVMIntEQ, mval, cv, "meq");
+                LLVMBasicBlockRef then_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "ma.then");
+                LLVMBasicBlockRef next_bb = LLVMAppendBasicBlockInContext(g->ctx, g->cur_fn, "ma.next");
+                LLVMBuildCondBr(g->bld, eq, then_bb, next_bb);
+                LLVMPositionBuilderAtEnd(g->bld, then_bb);
+                cg_block(g, n->match_stmt.case_bodies[i]);
+                if (!LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(g->bld)))
+                    LLVMBuildBr(g->bld, end_bb);
+                LLVMPositionBuilderAtEnd(g->bld, next_bb);
+            }
+        }
+        if (!LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(g->bld)))
+            LLVMBuildBr(g->bld, end_bb);
+        LLVMPositionBuilderAtEnd(g->bld, end_bb);
+        break;
+    }
+
+    case ND_DEFER:
+        assert(g->defer_count < 64);
+        g->defers[g->defer_count++] = n->defer_stmt.body;
+        break;
+
     case ND_COMPTIME:
         /* compile-time expression used as statement — evaluate and discard */
         cg_expr(g, n);
@@ -942,6 +1116,8 @@ static void cg_fn_decl(CG *g, Node *n) {
     LLVMValueRef prev_fn = g->cur_fn;
     EsType *prev_ret = g->cur_ret_type;
     int prev_sym_count = g->sym_count;
+    int prev_defer_count = g->defer_count;
+    g->defer_count = 0;
 
     g->cur_fn = fn;
     g->cur_ret_type = n->fn.ret_type;
@@ -960,6 +1136,9 @@ static void cg_fn_decl(CG *g, Node *n) {
     cg_block(g, n->fn.body);
 
     if (!LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(g->bld))) {
+        /* emit defers at implicit return */
+        for (int di = g->defer_count - 1; di >= 0; di--)
+            cg_stmt(g, g->defers[di]);
         if (n->fn.ret_type->kind == TY_VOID)
             LLVMBuildRetVoid(g->bld);
         else if (type_is_float(n->fn.ret_type))
@@ -971,6 +1150,7 @@ static void cg_fn_decl(CG *g, Node *n) {
     g->cur_fn = prev_fn;
     g->cur_ret_type = prev_ret;
     g->sym_count = prev_sym_count;
+    g->defer_count = prev_defer_count;
 }
 
 /* ---- public API ---- */
@@ -1003,15 +1183,29 @@ int codegen(Node *program, const char *out_obj, const char *module_name, int opt
     LLVMTargetDataRef dl = LLVMCreateTargetDataLayout(tm);
     LLVMSetModuleDataLayout(g.mod, dl);
 
-    /* two-pass: register structs first, then functions */
+    /* three-pass: structs, then enums, then functions */
     for (int i = 0; i < program->program.count; i++) {
         if (program->program.decls[i]->kind == ND_ST_DECL)
             cg_st_decl(&g, program->program.decls[i]);
     }
     for (int i = 0; i < program->program.count; i++) {
         Node *d = program->program.decls[i];
+        if (d->kind == ND_ENUM_DECL) {
+            /* register enum members as global i32 constants */
+            for (int j = 0; j < d->enum_decl.member_count; j++) {
+                LLVMValueRef gv = LLVMAddGlobal(g.mod, LLVMInt32TypeInContext(g.ctx), d->enum_decl.members[j]);
+                LLVMSetInitializer(gv, LLVMConstInt(LLVMInt32TypeInContext(g.ctx), d->enum_decl.values[j], 0));
+                LLVMSetGlobalConstant(gv, 1);
+                LLVMSetLinkage(gv, LLVMPrivateLinkage);
+                sym_push(&g, d->enum_decl.members[j], gv, type_basic(TY_I32), NULL);
+            }
+        }
+    }
+    for (int i = 0; i < program->program.count; i++) {
+        Node *d = program->program.decls[i];
         switch (d->kind) {
-        case ND_ST_DECL:  break; /* already handled */
+        case ND_ST_DECL:    break; /* already handled */
+        case ND_ENUM_DECL:  break; /* already handled */
         case ND_EXT_DECL: cg_ext_decl(&g, d); break;
         case ND_FN_DECL:  cg_fn_decl(&g, d);  break;
         default: es_fatal("unexpected top-level node %d", d->kind);

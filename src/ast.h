@@ -55,6 +55,10 @@ typedef enum {
     ND_WHILE,
     ND_BREAK,
     ND_CONTINUE,
+    ND_FOR,
+    ND_MATCH,
+    ND_DEFER,
+    ND_ENUM_DECL,
 
     /* expressions */
     ND_INT_LIT,
@@ -69,6 +73,7 @@ typedef enum {
     ND_CAST,
     ND_TERNARY,
     ND_NULL_LIT,
+    ND_STRUCT_INIT,
     ND_SIZEOF,
     ND_INLINE_ASM,
     ND_COMPTIME,
@@ -133,6 +138,33 @@ typedef struct Node {
         /* ND_WHILE */
         struct { struct Node *cond; struct Node *body; } while_stmt;
 
+        /* ND_FOR — ➰ i:=start..end { body } */
+        struct {
+            struct Node *init;   /* ND_DECL_STMT */
+            struct Node *cond;   /* expression: i < end */
+            struct Node *incr;   /* ND_ASSIGN: i = i + 1 */
+            struct Node *body;   /* ND_BLOCK */
+        } for_stmt;
+
+        /* ND_MATCH — 🎯 expr { val { body } ... _ { default } } */
+        struct {
+            struct Node *expr;
+            struct Node **case_vals;    /* NULL entry = default */
+            struct Node **case_bodies;
+            int case_count;
+        } match_stmt;
+
+        /* ND_DEFER — 🔜 expr */
+        struct { struct Node *body; } defer_stmt;
+
+        /* ND_ENUM_DECL — 🏷 Name { A; B; C = 5 } */
+        struct {
+            char *name;
+            char **members;
+            int *values;
+            int member_count;
+        } enum_decl;
+
         /* ND_INT_LIT */
         struct { int64_t value; } int_lit;
 
@@ -191,6 +223,14 @@ typedef struct Node {
 
         /* ND_SIZEOF */
         struct { EsType *target; } size_of;
+
+        /* ND_STRUCT_INIT — ✨ T { field: val, ... } */
+        struct {
+            EsType *stype;
+            char **fields;
+            struct Node **vals;
+            int field_count;
+        } struct_init;
 
         /* ND_INLINE_ASM — 🔩("template" : "=c"(out),... : "c"(in),... : "clobber",...) */
         struct {

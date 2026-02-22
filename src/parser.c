@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "preproc.h"
 
 /* ---- helpers ---- */
 static void next(Parser *p) { p->tok = lexer_next(&p->lex); }
@@ -45,12 +46,30 @@ static char *tok_name(Token *t) {
 static EsType *parse_type(Parser *p);
 static Node   *parse_expr(Parser *p);
 static Node   *parse_block(Parser *p);
+static Param  *parse_params(Parser *p, int *count, bool *vararg, bool allow_anon);
 Node *parser_parse_prelude(Parser *p);
 
 /* ---- type parsing ---- */
 static EsType *parse_type(Parser *p) {
-    /* pointer: * type */
-    if (match(p, TOK_STAR)) {
+    /* function pointer: *fn(types) -> ret */
+    if (check(p, TOK_STAR)) {
+        next(p); /* consume * */
+        if (check(p, TOK_FN)) {
+            next(p); /* consume fn/🔧 */
+            expect(p, TOK_LPAREN);
+            int pc = 0; bool va = false;
+            Param *params = parse_params(p, &pc, &va, true);
+            expect(p, TOK_RPAREN);
+            EsType *ret = type_basic(TY_VOID);
+            if (match(p, TOK_ARROW)) ret = parse_type(p);
+            EsType **ptypes = NULL;
+            if (pc > 0) {
+                ptypes = (EsType **)malloc(pc * sizeof(EsType *));
+                for (int i = 0; i < pc; i++) ptypes[i] = params[i].type;
+            }
+            return type_ptr(type_fn(ret, ptypes, pc, va));
+        }
+        /* regular pointer: *type */
         return type_ptr(parse_type(p));
     }
 
@@ -218,11 +237,33 @@ static Node *parse_primary(Parser *p) {
         return n;
     }
 
-    /* nw T  =>  malloc(sz T) as *T */
+    /* nw T  =>  malloc(sz T) as *T
+       nw T { f: v, ... }  =>  struct init literal */
     if (check(p, TOK_NW)) {
         next(p);
         EsType *ty = parse_type(p);
-        /* build: malloc(sz T) */
+        /* struct init literal: nw T { f: v, ... } */
+        if (check(p, TOK_LBRACE)) {
+            next(p); skip_nl(p);
+            struct { char **items; int count; int cap; } fnames = {0};
+            struct { Node **items; int count; int cap; } fvals = {0};
+            while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+                Token fname = expect(p, TOK_IDENT);
+                expect(p, TOK_COLON);
+                da_push(fnames, tok_name(&fname));
+                da_push(fvals, parse_expr(p));
+                if (!match(p, TOK_COMMA)) { skip_nl(p); if (!check(p, TOK_RBRACE)) skip_nl(p); }
+                else skip_nl(p);
+            }
+            expect(p, TOK_RBRACE);
+            Node *n = node_new(ND_STRUCT_INIT, line, col);
+            n->struct_init.stype = ty;
+            n->struct_init.fields = fnames.items;
+            n->struct_init.vals = fvals.items;
+            n->struct_init.field_count = fnames.count;
+            return n;
+        }
+        /* plain nw T: malloc(sz T) as *T */
         Node *callee = node_new(ND_IDENT, line, col);
         callee->ident.name = es_strdup("malloc");
         Node *arg = node_new(ND_SIZEOF, line, col);
@@ -560,6 +601,83 @@ static Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    /* fo i := start..end { body } — for loop */
+    if (check(p, TOK_FOR)) {
+        next(p);
+        Token iter = expect(p, TOK_IDENT);
+        expect(p, TOK_DECL_ASSIGN);
+        Node *start_expr = parse_expr(p);
+        expect(p, TOK_RANGE);
+        Node *end_expr = parse_expr(p);
+        Node *body = parse_block(p);
+        Node *n = node_new(ND_FOR, line, col);
+        /* init: i := start */
+        n->for_stmt.init = node_new(ND_DECL_STMT, line, col);
+        n->for_stmt.init->decl.name = tok_name(&iter);
+        n->for_stmt.init->decl.decl_type = NULL;
+        n->for_stmt.init->decl.init = start_expr;
+        /* cond: i < end */
+        Node *iref = node_new(ND_IDENT, line, col);
+        iref->ident.name = tok_name(&iter);
+        n->for_stmt.cond = node_new(ND_BINARY, line, col);
+        n->for_stmt.cond->binary.op = TOK_LT;
+        n->for_stmt.cond->binary.left = iref;
+        n->for_stmt.cond->binary.right = end_expr;
+        /* incr: i = i + 1 */
+        Node *iref2 = node_new(ND_IDENT, line, col);
+        iref2->ident.name = tok_name(&iter);
+        Node *one = node_new(ND_INT_LIT, line, col);
+        one->int_lit.value = 1;
+        Node *add = node_new(ND_BINARY, line, col);
+        add->binary.op = TOK_PLUS;
+        add->binary.left = iref2;
+        add->binary.right = one;
+        Node *iref3 = node_new(ND_IDENT, line, col);
+        iref3->ident.name = tok_name(&iter);
+        n->for_stmt.incr = node_new(ND_ASSIGN, line, col);
+        n->for_stmt.incr->assign.target = iref3;
+        n->for_stmt.incr->assign.value = add;
+        n->for_stmt.body = body;
+        skip_nl(p);
+        return n;
+    }
+
+    /* 🎯 expr { val { body } ... _ { body } } — match */
+    if (check(p, TOK_MATCH)) {
+        next(p);
+        Node *n = node_new(ND_MATCH, line, col);
+        n->match_stmt.expr = parse_expr(p);
+        expect(p, TOK_LBRACE);
+        skip_nl(p);
+        struct { Node **items; int count; int cap; } vals = {0};
+        struct { Node **items; int count; int cap; } bods = {0};
+        while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+            /* check for _ (default) */
+            if (check(p, TOK_IDENT) && p->tok.len == 1 && p->tok.start[0] == '_') {
+                next(p);
+                da_push(vals, (Node *)NULL);
+            } else {
+                da_push(vals, parse_expr(p));
+            }
+            da_push(bods, parse_block(p));
+            skip_nl(p);
+        }
+        expect(p, TOK_RBRACE);
+        n->match_stmt.case_vals = vals.items;
+        n->match_stmt.case_bodies = bods.items;
+        n->match_stmt.case_count = vals.count;
+        skip_nl(p);
+        return n;
+    }
+
+    /* 🔜 stmt — defer */
+    if (check(p, TOK_DEFER)) {
+        next(p);
+        Node *n = node_new(ND_DEFER, line, col);
+        n->defer_stmt.body = parse_stmt(p);
+        return n;
+    }
+
     /* declaration:  ID : type = expr  OR  ID := expr */
     if (check(p, TOK_IDENT)) {
         /* peek ahead for := or : type = */
@@ -750,10 +868,41 @@ static Node *parse_st_decl(Parser *p, bool has_kw) {
     return n;
 }
 
+static Node *parse_enum_decl(Parser *p) {
+    int line = p->tok.line, col = p->tok.col;
+    expect(p, TOK_ENUM);
+    Token name = expect(p, TOK_IDENT);
+    expect(p, TOK_LBRACE);
+    skip_nl(p);
+    struct { char **items; int count; int cap; } members = {0};
+    struct { int *items; int count; int cap; } values = {0};
+    int val = 0;
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+        Token mname = expect(p, TOK_IDENT);
+        if (match(p, TOK_ASSIGN)) {
+            Token num = expect(p, TOK_INT_LIT);
+            val = (int)num.int_val;
+        }
+        da_push(members, tok_name(&mname));
+        da_push(values, val);
+        val++;
+        if (match(p, TOK_COMMA) || match(p, TOK_SEMI)) { /* optional separator */ }
+        skip_nl(p);
+    }
+    expect(p, TOK_RBRACE);
+    Node *n = node_new(ND_ENUM_DECL, line, col);
+    n->enum_decl.name = tok_name(&name);
+    n->enum_decl.members = members.items;
+    n->enum_decl.values = values.items;
+    n->enum_decl.member_count = members.count;
+    return n;
+}
+
 static Node *parse_decl(Parser *p) {
-    if (check(p, TOK_EXT)) return parse_ext_decl(p);
-    if (check(p, TOK_FN))  return parse_fn_decl(p, true);
-    if (check(p, TOK_ST))  return parse_st_decl(p, true);
+    if (check(p, TOK_EXT))  return parse_ext_decl(p);
+    if (check(p, TOK_FN))   return parse_fn_decl(p, true);
+    if (check(p, TOK_ST))   return parse_st_decl(p, true);
+    if (check(p, TOK_ENUM)) return parse_enum_decl(p);
 
     /* keyword-free: IDENT( → function, IDENT{ → struct */
     if (check(p, TOK_IDENT)) {
@@ -789,7 +938,9 @@ static Node *load_prelude(const char *name) {
     }
     if (!f) return NULL;
     fclose(f);
-    char *src = es_read_file(path);
+    char *raw = es_read_file(path);
+    char *src = preprocess(raw);
+    if (src != raw) free(raw);
     Parser sub;
     parser_init(&sub, src, path);
     return parser_parse_prelude(&sub);

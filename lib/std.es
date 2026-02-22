@@ -81,6 +81,21 @@
 🔌 sleep(🔵) -> 🔵
 🔌 usleep(🔵) -> 🔢
 
+// ⏱️ time
+🔌 time(*🔷) -> 🔷
+🔌 signal(🔢, *⬛) -> *⬛
+🔌 snprintf(*🔶, 💎, *🔶, ...) -> 🔢
+🔌 strtol(*🔶, **🔶, 🔢) -> 🔷
+🔌 strtod(*🔶, **🔶) -> 🌀
+🔌 qsort(*⬛, 💎, 💎, *⬛)
+🔌 rand() -> 🔢
+🔌 srand(🔵)
+🔌 setenv(*🔶, *🔶, 🔢) -> 🔢
+🔌 unlink(*🔶) -> 🔢
+🔌 access(*🔶, 🔢) -> 🔢
+🔌 pipe(*🔢) -> 🔢
+🔌 dup2(🔢, 🔢) -> 🔢
+
 // 🗺️
 🔌 mmap(*⬛, 💎, 🔢, 🔢, 🔢, 🔷) -> *⬛
 🔌 munmap(*⬛, 💎) -> 🔢

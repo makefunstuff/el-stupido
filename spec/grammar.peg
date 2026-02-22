@@ -1,14 +1,16 @@
 # el-stupido grammar (PEG)
 # AI-optimized token-efficient systems language
-# This spec fits in ~800 LLM tokens
+# This spec fits in ~1000 LLM tokens
 
 prog    <- decl*
-decl    <- ext_decl / st_decl / fn_decl / use_decl
+decl    <- ext_decl / st_decl / fn_decl / use_decl / enum_decl / import_decl
 
-use_decl <- 'use' ID NL
-ext_decl <- 'ext' ID '(' params? '...'? ')' ('->' type)? NL
-st_decl  <- 'st' ID '{' (ID ':' type NL)+ '}'
-fn_decl  <- 'fn' ID '(' params? ')' ('->' type)? block
+use_decl    <- 'use' ID NL
+import_decl <- 'import' ID NL           # 📥 name — loads lib/<name>.es
+ext_decl    <- 'ext' ID '(' params? '...'? ')' ('->' type)? NL
+st_decl     <- 'st' ID '{' (ID ':' type NL)+ '}'
+fn_decl     <- 'fn' ID '(' params? ')' ('->' type)? block
+enum_decl   <- 'en' ID '{' (ID ('=' NUM)? ';')* '}'
 
 params  <- param (',' param)*
 param   <- ID ':' type
@@ -16,24 +18,34 @@ param   <- ID ':' type
 type    <- 'i8' / 'i16' / 'i32' / 'i64'
          / 'u8' / 'u16' / 'u32' / 'u64'
          / 'f32' / 'f64' / 'v'
+         / '*' 'fn' '(' typelist? ')' '->' type   # fn ptr: *fn(i32,i32)->i32
          / '*' type / '[' NUM ']' type / ID
 
+typelist <- type (',' type)*
+
 block   <- '{' NL? stmt* '}'
-stmt    <- decl_stmt / assign_stmt / if_stmt / wh_stmt
-         / ret_stmt / expr_stmt
+stmt    <- decl_stmt / assign_stmt / if_stmt / wh_stmt / for_stmt
+         / match_stmt / defer_stmt / ret_stmt / brk_stmt / cont_stmt
+         / expr_stmt
+
 decl_stmt   <- ID (':' type)? ':=' expr NL
-assign_stmt <- lvalue '=' expr NL
+assign_stmt <- lvalue ('=' / '+=' / '-=' / '*=' / '/=') expr NL
 if_stmt     <- 'if' expr block ('el' block)?
 wh_stmt     <- 'wh' expr block
+for_stmt    <- 'fo' ID ':=' expr '..' expr block
+match_stmt  <- 'ma' expr '{' (expr block)* ('_' block)? '}'
+defer_stmt  <- 'df' stmt
 ret_stmt    <- 'ret' expr? NL
+brk_stmt    <- 'brk' NL
+cont_stmt   <- 'cont' NL
 expr_stmt   <- expr NL
 
 lvalue  <- '*' lvalue / postfix
 
 # Operator precedence (low to high)
 expr      <- logic_or
-logic_or  <- logic_and ('||' logic_and)*
-logic_and <- compare ('&&' compare)*
+logic_or  <- logic_and ('||' logic_and)*       # short-circuit
+logic_and <- compare ('&&' compare)*           # short-circuit
 compare   <- bitor (('=='/'!='/'<'/'>'/'<='/'>=') bitor)?
 bitor     <- bitxor ('|' bitxor)*
 bitxor    <- bitand ('^' bitand)*
@@ -48,16 +60,24 @@ index     <- '[' expr ']'
 field     <- '.' ID
 cast      <- 'as' type
 args      <- expr (',' expr)*
-primary   <- NUM / STR / CHAR / 'sz' type / 'null' / ID / '(' expr ')'
+primary   <- NUM / STR / CHAR / 'sz' type / 'null'
+           / 'nw' type '{' (ID ':' expr ',')* '}'   # struct init: nw T { f: v }
+           / 'nw' type                               # heap alloc: nw T
+           / ID / '(' expr ')'
 
 # Tokens
 ID   <- [a-zA-Z_][a-zA-Z0-9_]*
-NUM  <- [0-9]+ / '0x' [0-9a-fA-F]+
+NUM  <- [0-9]+ ('.' [0-9]+)? / '0x' [0-9a-fA-F]+
 STR  <- '"' ([^"\\] / '\\' .)* '"'
 CHAR <- "'" . "'"
 NL   <- '\n'+
 
 # UFCS: x.f(args) rewrites to f(x, args) when f is not a struct field
-# No semicolons. No parens around conditions. Braces for blocks.
-# Types: i8-i64 u8-u64 f32 f64 v(void) *T [N]T
+# No semicolons needed. No parens around conditions. Braces for blocks.
+# Types: i8-i64 u8-u64 f32 f64 v(void) *T *fn(T...)->T [N]T
 # Ops: := (declare+infer) & (addr) * (deref) as (cast) sz (sizeof)
+# && || are short-circuit (safe for null guards)
+# Defer: runs cleanup in reverse at every return point
+# For: range-based only (start..end), exclusive end
+# Match: pattern matching on values, _ = default
+# Enum: auto-incrementing i32 constants, manual values with =

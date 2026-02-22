@@ -44,18 +44,19 @@ static Token error_tok(Lexer *l, const char *msg) {
 static TokenKind check_keyword(const char *s, int len) {
     switch (len) {
     case 1:
-        if (s[0] == 'v') return TOK_VOID;
         break;
     case 2:
         if (s[0]=='f' && s[1]=='n') return TOK_FN;
         if (s[0]=='i' && s[1]=='f') return TOK_IF;
         if (s[0]=='e' && s[1]=='l') return TOK_EL;
         if (s[0]=='w' && s[1]=='h') return TOK_WH;
-        if (s[0]=='s' && s[1]=='t') return TOK_ST;
         if (s[0]=='a' && s[1]=='s') return TOK_AS;
-        if (s[0]=='s' && s[1]=='z') return TOK_SZ;
         if (s[0]=='n' && s[1]=='w') return TOK_NW;
         if (s[0]=='c' && s[1]=='t') return TOK_CT;
+        if (s[0]=='f' && s[1]=='o') return TOK_FOR;
+        if (s[0]=='m' && s[1]=='a') return TOK_MATCH;
+        if (s[0]=='e' && s[1]=='n') return TOK_ENUM;
+        if (s[0]=='d' && s[1]=='f') return TOK_DEFER;
         if (s[0]=='i' && s[1]=='8') return TOK_I8;
         if (s[0]=='u' && s[1]=='8') return TOK_U8;
         break;
@@ -139,6 +140,10 @@ static TokenKind check_emoji(uint32_t cp) {
     /* new features */
     case 0x1F529: return TOK_ASM;     /* 🔩 */
     case 0x26A1:  return TOK_CT;      /* ⚡ */
+    case 0x27B0:  return TOK_FOR;     /* ➰ */
+    case 0x1F3AF: return TOK_MATCH;   /* 🎯 */
+    case 0x1F3F7: return TOK_ENUM;    /* 🏷  */
+    case 0x1F51C: return TOK_DEFER;   /* 🔜 */
 
     /* misc */
     case 0x1F504: return TOK_AS;      /* 🔄 */
@@ -499,6 +504,10 @@ Token lexer_next(Lexer *l) {
             advance(l); advance(l);
             return make(l, TOK_ELLIPSIS, start, sline, scol);
         }
+        if (peek(l)=='.') {
+            advance(l);
+            return make(l, TOK_RANGE, start, sline, scol);
+        }
         return make(l, TOK_DOT, start, sline, scol);
     }
 
@@ -510,14 +519,15 @@ const char *tok_str(TokenKind k) {
     static const char *names[] = {
         [TOK_EXT]="ext", [TOK_FN]="fn", [TOK_RET]="ret",
         [TOK_IF]="if", [TOK_EL]="el", [TOK_WH]="wh",
-        [TOK_ST]="st", [TOK_USE]="use", [TOK_AS]="as",
-        [TOK_SZ]="sz", [TOK_NULL_KW]="null",
+        [TOK_ST]="struct", [TOK_USE]="use", [TOK_AS]="as",
+        [TOK_SZ]="sizeof", [TOK_NULL_KW]="null",
         [TOK_BRK]="brk", [TOK_CONT]="cont",
         [TOK_NW]="nw", [TOK_DEL]="del",
         [TOK_ASM]="asm", [TOK_CT]="ct",
+        [TOK_FOR]="fo", [TOK_MATCH]="ma", [TOK_ENUM]="en", [TOK_DEFER]="df",
         [TOK_I8]="i8", [TOK_I16]="i16", [TOK_I32]="i32", [TOK_I64]="i64",
         [TOK_U8]="u8", [TOK_U16]="u16", [TOK_U32]="u32", [TOK_U64]="u64",
-        [TOK_F32]="f32", [TOK_F64]="f64", [TOK_VOID]="v",
+        [TOK_F32]="f32", [TOK_F64]="f64", [TOK_VOID]="void",
         [TOK_INT_LIT]="<int>", [TOK_FLOAT_LIT]="<float>", [TOK_STR_LIT]="<str>",
         [TOK_IDENT]="<id>",
         [TOK_PLUS]="+", [TOK_MINUS]="-", [TOK_STAR]="*",
@@ -534,7 +544,7 @@ const char *tok_str(TokenKind k) {
         [TOK_STAR_EQ]="*=", [TOK_SLASH_EQ]="/=", [TOK_PERCENT_EQ]="%=",
         [TOK_SEMI]=";",
         [TOK_COLON]=":", [TOK_ARROW]="->", [TOK_DOT]=".",
-        [TOK_ELLIPSIS]="...", [TOK_COMMA]=",",
+        [TOK_ELLIPSIS]="...", [TOK_RANGE]="..", [TOK_COMMA]=",",
         [TOK_LPAREN]="(", [TOK_RPAREN]=")",
         [TOK_LBRACE]="{", [TOK_RBRACE]="}",
         [TOK_LBRACKET]="[", [TOK_RBRACKET]="]",
