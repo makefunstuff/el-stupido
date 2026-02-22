@@ -1,11 +1,11 @@
-main() {
+🏁() {
   🔩("nop")
-  printf("nop ok\n")
+  🖨("nop ok\n")
   lo: 🔢 = 0
   hi: 🔢 = 0
   🔩("rdtsc" : "={eax}"(lo), "={edx}"(hi))
-  printf("rdtsc: %d %d\n", hi, lo)
+  🖨("rdtsc: %d %d\n", hi, lo)
   x: 🔢 = 100
   🔩("addl $2, $0" : "=r"(x) : "0"(x), "r"(42))
-  printf("100+42 🔩 = %d\n", x)
+  🖨("100+42 🔩 = %d\n", x)
 }

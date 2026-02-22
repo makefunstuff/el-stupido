@@ -168,6 +168,108 @@ static TokenKind check_emoji(uint32_t cp) {
     }
 }
 
+/* ---- emoji → C function name aliases ---- */
+/*  🖨  printf    📣 fprintf   📝 sprintf   📢 puts
+    🔔 putchar   👂 getchar   📂 open      📕 close
+    📖 read      ✏  write     🔖 lseek
+    🧠 malloc    🧩 calloc    ♻  realloc   🆓 free
+    🧹 memset    📋 memcpy    🔀 memmove   ⚖  memcmp
+    🧵 strlen    ⚔  strcmp    🗡  strncmp   ✂  strcpy
+    🪡 strncpy   🔗 strcat    🔍 strchr    🔎 strstr
+    🅰  atoi     🅱  atol
+    🌐 socket    📌 bind      📡 listen    🤝 accept
+    🧲 connect   📤 send      📩 recv      🎛  setsockopt
+    🔃 htons     🔂 htonl     🔙 ntohs     🔚 ntohl
+    🏠 inet_addr
+    📐 sqrt      🎵 sin       🎶 cos       💪 pow
+    🧊 fabs      ⬇  floor     ⬆  ceil      📓 log
+    💀 exit      🍴 fork      🏃 execvp    ⏳ waitpid
+    🆔 getpid    😴 sleep     ⏰ usleep
+    🗺  mmap     🚫 munmap                              */
+static const char *check_emoji_fn(uint32_t cp) {
+    switch (cp) {
+    /* I/O */
+    case 0x1F5A8: return "printf";
+    case 0x1F4E3: return "fprintf";
+    case 0x1F4DD: return "sprintf";
+    case 0x1F4E2: return "puts";
+    case 0x1F514: return "putchar";
+    case 0x1F442: return "getchar";
+
+    /* file */
+    case 0x1F4C2: return "open";
+    case 0x1F4D5: return "close";
+    case 0x1F4D6: return "read";
+    case 0x270F:  return "write";
+    case 0x1F516: return "lseek";
+
+    /* memory */
+    case 0x1F9E0: return "malloc";
+    case 0x1F9E9: return "calloc";
+    case 0x267B:  return "realloc";
+    case 0x1F193: return "free";
+    case 0x1F9F9: return "memset";
+    case 0x1F4CB: return "memcpy";
+    case 0x1F500: return "memmove";
+    case 0x2696:  return "memcmp";
+
+    /* strings */
+    case 0x1F9F5: return "strlen";
+    case 0x2694:  return "strcmp";
+    case 0x1F5E1: return "strncmp";
+    case 0x2702:  return "strcpy";
+    case 0x1FAA1: return "strncpy";
+    case 0x1F517: return "strcat";
+    case 0x1F50D: return "strchr";
+    case 0x1F50E: return "strstr";
+    case 0x1F170: return "atoi";
+    case 0x1F171: return "atol";
+
+    /* network */
+    case 0x1F310: return "socket";
+    case 0x1F4CC: return "bind";
+    case 0x1F4E1: return "listen";
+    case 0x1F91D: return "accept";
+    case 0x1F9F2: return "connect";
+    case 0x1F4E4: return "send";
+    case 0x1F4E9: return "recv";
+    case 0x1F39B: return "setsockopt";
+    case 0x1F503: return "htons";
+    case 0x1F502: return "htonl";
+    case 0x1F519: return "ntohs";
+    case 0x1F51A: return "ntohl";
+    case 0x1F3E0: return "inet_addr";
+
+    /* math */
+    case 0x1F4D0: return "sqrt";
+    case 0x1F3B5: return "sin";
+    case 0x1F3B6: return "cos";
+    case 0x1F4AA: return "pow";
+    case 0x1F9CA: return "fabs";
+    case 0x2B07:  return "floor";
+    case 0x2B06:  return "ceil";
+    case 0x1F4D3: return "log";
+
+    /* process */
+    case 0x1F480: return "exit";
+    case 0x1F374: return "fork";
+    case 0x1F3C3: return "execvp";
+    case 0x231B:  return "waitpid";
+    case 0x1F194: return "getpid";
+    case 0x1F634: return "sleep";
+    case 0x23F0:  return "usleep";
+
+    /* mmap */
+    case 0x1F5FA: return "mmap";
+    case 0x1F6AB: return "munmap";
+
+    /* entry point */
+    case 0x1F3C1: return "main";
+
+    default: return NULL;
+    }
+}
+
 static Token scan_emoji(Lexer *l) {
     const char *start = l->cur;
     int sline = l->line, scol = l->col;
@@ -178,9 +280,25 @@ static Token scan_emoji(Lexer *l) {
     int vb;
     if (decode_utf8(l->cur, &vb) == 0xFE0F)
         for (int i = 0; i < vb; i++) advance(l);
+
+    /* keyword? */
     TokenKind k = check_emoji(cp);
     if (k != TOK_ERROR)
         return make(l, k, start, sline, scol);
+
+    /* C function alias? → return as TOK_IDENT with C name */
+    const char *fn = check_emoji_fn(cp);
+    if (fn) {
+        Token t;
+        memset(&t, 0, sizeof(t));
+        t.kind = TOK_IDENT;
+        t.start = fn;
+        t.len = (int)strlen(fn);
+        t.line = sline;
+        t.col = scol;
+        return t;
+    }
+
     return error_tok(l, "unexpected character");
 }
 

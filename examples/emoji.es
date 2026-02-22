@@ -1,12 +1,12 @@
 🔧 fizz(n: 🔢) -> 🔢 {
-  ❓ n % 15 == 0 { printf("FizzBuzz\n") }
-  ❗ ❓ n % 3 == 0 { printf("Fizz\n") }
-  ❗ ❓ n % 5 == 0 { printf("Buzz\n") }
-  ❗ { printf("%d\n", n) }
+  ❓ n % 15 == 0 { 🖨("FizzBuzz\n") }
+  ❗ ❓ n % 3 == 0 { 🖨("Fizz\n") }
+  ❗ ❓ n % 5 == 0 { 🖨("Buzz\n") }
+  ❗ { 🖨("%d\n", n) }
   ↩ 0
 }
 
-main() {
+🏁() {
   i := 1
   🔁 i <= 20 {
     fizz(i)

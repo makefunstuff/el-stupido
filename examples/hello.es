@@ -1,1 +1,1 @@
-main(){printf("Hello, World!\n")}
+🏁(){🖨("Hello, World!\n")}
