@@ -11,6 +11,11 @@ If modern programming languages semantics optimised for humans, and society (at 
 
 What the point of this compute waste?
 
+## Crazy assumption, not proven at all
+If we don't read the code, if rely on generation, why do we need complex grammar at all?
+Why not to fit tiny grammar into small local model context and "embrace the vibes"
+Let compiler do the job
+
 ## How to helloworld?
 
 ```
