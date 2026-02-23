@@ -5,6 +5,7 @@
 #include "sexpr.h"
 #include "codegen.h"
 #include "preproc.h"
+#include "codebook.h"
 
 static void usage(void) {
     fprintf(stderr, "usage: esc <input.es> [-o <output>] [-O<level>] [--wasm] [--emit-ir]\n");
@@ -45,9 +46,13 @@ int main(int argc, char **argv) {
     /* read source */
     char *raw = es_read_file(input);
 
-    /* preprocess: expand 📎 macros before parsing */
-    char *src = preprocess(raw);
-    if (src != raw) free(raw);
+    /* preprocess: expand macros before parsing */
+    char *pp = preprocess(raw);
+    if (pp != raw) free(raw);
+
+    /* codebook: expand domain directives (use web, etc.) */
+    char *src = codebook_expand(pp);
+    if (src != pp) free(pp);
 
     /* parse -- detect front-end by file extension */
     Node *program;

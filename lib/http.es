@@ -17,6 +17,11 @@
   http_send(fd, &hdr)
 }
 
+fn http_reply(fd: i32, code: i32, ctype: *u8, body: *u8) {
+  http_resp(fd, code, ctype)
+  http_send(fd, body)
+}
+
 🔧 http_redirect(fd: 🔢, loc: *🔶) {
   hdr: [512]🔶
   📝(&hdr, "HTTP/1.1 303 See Other\r\nLocation: %s\r\nContent-Length: 0\r\n\r\n", loc)

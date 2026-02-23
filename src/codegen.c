@@ -168,6 +168,125 @@ static LLVMValueRef coerce(CG *g, LLVMValueRef val, LLVMTypeRef target) {
 /* ---- expression codegen ---- */
 static LLVMValueRef cg_expr(CG *g, Node *n);
 
+static LLVMValueRef cg_builtin_print(CG *g, Node *n) {
+    if (n->call.arg_count < 1) es_fatal("print requires at least 1 argument");
+
+    /* Look up printf */
+    struct Symbol *printf_sym = sym_lookup(g, "printf");
+    if (!printf_sym) es_fatal("print requires printf (load std prelude)");
+
+    LLVMValueRef val = cg_expr(g, n->call.args[0]);
+    EsType *ty = n->call.args[0]->type;
+
+    const char *fmt;
+    LLVMValueRef cast_val = val;
+
+    if (!ty || type_is_int(ty)) {
+        if (ty && (ty->kind == TY_I64 || ty->kind == TY_U64)) {
+            fmt = "%lld\n";
+        } else {
+            fmt = "%d\n";
+        }
+    } else if (type_is_float(ty)) {
+        fmt = "%f\n";
+        if (ty->kind == TY_F32)
+            cast_val = LLVMBuildFPExt(g->bld, val, LLVMDoubleTypeInContext(g->ctx), "fpext");
+    } else if (type_is_ptr(ty)) {
+        /* assume *u8 = string */
+        fmt = "%s\n";
+    } else {
+        fmt = "%d\n"; /* fallback */
+    }
+
+    LLVMValueRef fmt_str = LLVMBuildGlobalStringPtr(g->bld, fmt, "print_fmt");
+    LLVMValueRef args[2] = { fmt_str, cast_val };
+
+    LLVMTypeRef printf_type = printf_sym->llvm_fn_type;
+    return LLVMBuildCall2(g->bld, printf_type, printf_sym->value, args, 2, "");
+}
+
+/* Expand product(start..end) or product(start..=end) to accumulator loop */
+static LLVMValueRef cg_builtin_reduce(CG *g, Node *n, const char *name) {
+    if (n->call.arg_count != 1) es_fatal("%s requires exactly 1 range argument", name);
+
+    Node *arg = n->call.args[0];
+    if (arg->kind != ND_BINARY || (arg->binary.op != TOK_RANGE && arg->binary.op != TOK_RANGE_INC))
+        es_fatal("%s argument must be a range (start..end or start..=end)", name);
+
+    bool inclusive = (arg->binary.op == TOK_RANGE_INC);
+    LLVMValueRef start_val = cg_expr(g, arg->binary.left);
+    LLVMValueRef end_val = cg_expr(g, arg->binary.right);
+
+    /* coerce to i32 */
+    LLVMTypeRef i32_ty = LLVMInt32TypeInContext(g->ctx);
+    start_val = LLVMBuildIntCast2(g->bld, start_val, i32_ty, true, "s");
+    end_val = LLVMBuildIntCast2(g->bld, end_val, i32_ty, true, "e");
+
+    /* determine init value and operation */
+    bool is_product = (strcmp(name, "product") == 0);
+    bool is_sum = (strcmp(name, "sum") == 0);
+    bool is_count = (strcmp(name, "count") == 0);
+    bool is_min = (strcmp(name, "min") == 0);
+    bool is_max = (strcmp(name, "max") == 0);
+
+    LLVMValueRef init;
+    if (is_product) init = LLVMConstInt(i32_ty, 1, false);
+    else if (is_min) init = LLVMConstInt(i32_ty, 2147483647, false);
+    else if (is_max) init = LLVMConstInt(i32_ty, -2147483648ULL, true);
+    else init = LLVMConstInt(i32_ty, 0, false); /* sum, count */
+
+    /* alloca for accumulator and iterator */
+    LLVMValueRef acc_ptr = LLVMBuildAlloca(g->bld, i32_ty, "acc");
+    LLVMValueRef i_ptr = LLVMBuildAlloca(g->bld, i32_ty, "i");
+    LLVMBuildStore(g->bld, init, acc_ptr);
+    LLVMBuildStore(g->bld, start_val, i_ptr);
+
+    /* basic blocks */
+    LLVMValueRef fn = g->cur_fn;
+    LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(g->ctx, fn, "red_cond");
+    LLVMBasicBlockRef body_bb = LLVMAppendBasicBlockInContext(g->ctx, fn, "red_body");
+    LLVMBasicBlockRef end_bb = LLVMAppendBasicBlockInContext(g->ctx, fn, "red_end");
+
+    LLVMBuildBr(g->bld, cond_bb);
+
+    /* condition: i < end (exclusive) or i <= end (inclusive) */
+    LLVMPositionBuilderAtEnd(g->bld, cond_bb);
+    LLVMValueRef i_val = LLVMBuildLoad2(g->bld, i32_ty, i_ptr, "iv");
+    LLVMValueRef cmp = inclusive
+        ? LLVMBuildICmp(g->bld, LLVMIntSLE, i_val, end_val, "cmp")
+        : LLVMBuildICmp(g->bld, LLVMIntSLT, i_val, end_val, "cmp");
+    LLVMBuildCondBr(g->bld, cmp, body_bb, end_bb);
+
+    /* body: acc = acc OP i */
+    LLVMPositionBuilderAtEnd(g->bld, body_bb);
+    LLVMValueRef acc_val = LLVMBuildLoad2(g->bld, i32_ty, acc_ptr, "av");
+    LLVMValueRef i_val2 = LLVMBuildLoad2(g->bld, i32_ty, i_ptr, "iv2");
+
+    LLVMValueRef new_acc;
+    if (is_product) new_acc = LLVMBuildMul(g->bld, acc_val, i_val2, "mul");
+    else if (is_sum) new_acc = LLVMBuildAdd(g->bld, acc_val, i_val2, "add");
+    else if (is_count) new_acc = LLVMBuildAdd(g->bld, acc_val, LLVMConstInt(i32_ty, 1, false), "cnt");
+    else if (is_min) {
+        LLVMValueRef lt = LLVMBuildICmp(g->bld, LLVMIntSLT, i_val2, acc_val, "lt");
+        new_acc = LLVMBuildSelect(g->bld, lt, i_val2, acc_val, "min");
+    } else { /* max */
+        LLVMValueRef gt = LLVMBuildICmp(g->bld, LLVMIntSGT, i_val2, acc_val, "gt");
+        new_acc = LLVMBuildSelect(g->bld, gt, i_val2, acc_val, "max");
+    }
+
+    LLVMBuildStore(g->bld, new_acc, acc_ptr);
+
+    /* increment: i = i + 1 */
+    LLVMValueRef one = LLVMConstInt(i32_ty, 1, false);
+    LLVMValueRef next_i = LLVMBuildAdd(g->bld, i_val2, one, "next");
+    LLVMBuildStore(g->bld, next_i, i_ptr);
+    LLVMBuildBr(g->bld, cond_bb);
+
+    /* end: load result */
+    LLVMPositionBuilderAtEnd(g->bld, end_bb);
+    return LLVMBuildLoad2(g->bld, i32_ty, acc_ptr, "result");
+}
+
 /* infer EsType from expression (call after cg_expr sets n->type) */
 static EsType *infer_expr_type(CG *g, Node *n) {
     if (n->type) return n->type;
@@ -319,7 +438,20 @@ static LLVMValueRef cg_call(CG *g, Node *n) {
 
     if (callee->kind == ND_IDENT) {
         sym = sym_lookup(g, callee->ident.name);
-        if (!sym) es_fatal("undefined function '%s'", callee->ident.name);
+        if (!sym) {
+            /* check for builtin functions */
+            if (strcmp(callee->ident.name, "print") == 0) {
+                return cg_builtin_print(g, n);
+            }
+            if (strcmp(callee->ident.name, "product") == 0 ||
+                strcmp(callee->ident.name, "sum") == 0 ||
+                strcmp(callee->ident.name, "count") == 0 ||
+                strcmp(callee->ident.name, "min") == 0 ||
+                strcmp(callee->ident.name, "max") == 0) {
+                return cg_builtin_reduce(g, n, callee->ident.name);
+            }
+            es_fatal("undefined function '%s'", callee->ident.name);
+        }
         /* function pointer variable: *fn(...) -> ret */
         if (!sym->llvm_fn_type && sym->type &&
             sym->type->kind == TY_PTR && sym->type->ptr.base &&

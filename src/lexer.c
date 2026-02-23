@@ -67,6 +67,9 @@ static TokenKind check_keyword(const char *s, int len) {
         if (memcmp(s,"brk",3)==0) return TOK_BRK;
         if (memcmp(s,"del",3)==0) return TOK_DEL;
         if (memcmp(s,"asm",3)==0) return TOK_ASM;
+        if (memcmp(s,"var",3)==0) return TOK_VAR;
+        if (memcmp(s,"for",3)==0) return TOK_FOR;
+        if (memcmp(s,"let",3)==0) return TOK_VAR;
         if (memcmp(s,"i16",3)==0) return TOK_I16;
         if (memcmp(s,"i32",3)==0) return TOK_I32;
         if (memcmp(s,"i64",3)==0) return TOK_I64;
@@ -79,6 +82,25 @@ static TokenKind check_keyword(const char *s, int len) {
     case 4:
         if (memcmp(s,"null",4)==0) return TOK_NULL_KW;
         if (memcmp(s,"cont",4)==0) return TOK_CONT;
+        if (memcmp(s,"void",4)==0) return TOK_VOID;
+        if (memcmp(s,"else",4)==0) return TOK_EL;
+        if (memcmp(s,"bool",4)==0) return TOK_BOOL;
+        break;
+    case 5:
+        if (memcmp(s,"while",5)==0) return TOK_WH;
+        if (memcmp(s,"break",5)==0) return TOK_BRK;
+        if (memcmp(s,"match",5)==0) return TOK_MATCH;
+        if (memcmp(s,"defer",5)==0) return TOK_DEFER;
+        break;
+    case 6:
+        if (memcmp(s,"return",6)==0) return TOK_RET;
+        if (memcmp(s,"struct",6)==0) return TOK_ST;
+        if (memcmp(s,"extern",6)==0) return TOK_EXT;
+        if (memcmp(s,"delete",6)==0) return TOK_DEL;
+        if (memcmp(s,"sizeof",6)==0) return TOK_SZ;
+        break;
+    case 8:
+        if (memcmp(s,"continue",8)==0) return TOK_CONT;
         break;
     }
     return TOK_IDENT;
@@ -470,6 +492,7 @@ Token lexer_next(Lexer *l) {
 
     case '|':
         if (peek(l)=='|') { advance(l); return make(l, TOK_LOR, start, sline, scol); }
+        if (peek(l)=='>') { advance(l); return make(l, TOK_PIPE_OP, start, sline, scol); }
         return make(l, TOK_PIPE, start, sline, scol);
 
     case '!':
@@ -506,6 +529,10 @@ Token lexer_next(Lexer *l) {
         }
         if (peek(l)=='.') {
             advance(l);
+            if (peek(l)=='=') {
+                advance(l);
+                return make(l, TOK_RANGE_INC, start, sline, scol);
+            }
             return make(l, TOK_RANGE, start, sline, scol);
         }
         return make(l, TOK_DOT, start, sline, scol);
@@ -532,7 +559,7 @@ const char *tok_str(TokenKind k) {
         [TOK_IDENT]="<id>",
         [TOK_PLUS]="+", [TOK_MINUS]="-", [TOK_STAR]="*",
         [TOK_SLASH]="/", [TOK_PERCENT]="%",
-        [TOK_AMP]="&", [TOK_PIPE]="|", [TOK_CARET]="^",
+        [TOK_AMP]="&", [TOK_PIPE]="|", [TOK_PIPE_OP]="|>", [TOK_CARET]="^",
         [TOK_TILDE]="~", [TOK_BANG]="!",
         [TOK_EQ]="==", [TOK_NEQ]="!=",
         [TOK_LT]="<", [TOK_GT]=">", [TOK_LEQ]="<=", [TOK_GEQ]=">=",
@@ -544,7 +571,7 @@ const char *tok_str(TokenKind k) {
         [TOK_STAR_EQ]="*=", [TOK_SLASH_EQ]="/=", [TOK_PERCENT_EQ]="%=",
         [TOK_SEMI]=";",
         [TOK_COLON]=":", [TOK_ARROW]="->", [TOK_DOT]=".",
-        [TOK_ELLIPSIS]="...", [TOK_RANGE]="..", [TOK_COMMA]=",",
+        [TOK_ELLIPSIS]="...", [TOK_RANGE]="..", [TOK_RANGE_INC]="..=", [TOK_COMMA]=",",
         [TOK_LPAREN]="(", [TOK_RPAREN]=")",
         [TOK_LBRACE]="{", [TOK_RBRACE]="}",
         [TOK_LBRACKET]="[", [TOK_RBRACKET]="]",

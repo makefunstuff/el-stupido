@@ -172,7 +172,9 @@ static Param *parse_params(Parser *p, int *count, bool *vararg, bool allow_anon)
             Param pm = { .name = es_strdup(anon_name), .type = ty };
             da_push(da, pm);
         } else {
-            expect(p, TOK_COLON); /* will error with good message */
+            /* default to i32 when no type is specified */
+            Param pm = { .name = tok_name(&name), .type = type_basic(TY_I32) };
+            da_push(da, pm);
         }
         if (!match(p, TOK_COMMA)) break;
     }
@@ -381,16 +383,17 @@ static Node *parse_cast(Parser *p) {
 /* binary operator precedence helpers */
 static int binop_prec(TokenKind k) {
     switch (k) {
-    case TOK_LOR:     return 1;
-    case TOK_LAND:    return 2;
-    case TOK_PIPE:    return 3;
-    case TOK_CARET:   return 4;
-    case TOK_AMP:     return 5;
-    case TOK_EQ: case TOK_NEQ: return 6;
-    case TOK_LT: case TOK_GT: case TOK_LEQ: case TOK_GEQ: return 7;
-    case TOK_SHL: case TOK_SHR: return 8;
-    case TOK_PLUS: case TOK_MINUS: return 9;
-    case TOK_STAR: case TOK_SLASH: case TOK_PERCENT: return 10;
+    case TOK_RANGE: case TOK_RANGE_INC: return 1;
+    case TOK_LOR:     return 2;
+    case TOK_LAND:    return 3;
+    case TOK_PIPE:    return 4;
+    case TOK_CARET:   return 5;
+    case TOK_AMP:     return 6;
+    case TOK_EQ: case TOK_NEQ: return 7;
+    case TOK_LT: case TOK_GT: case TOK_LEQ: case TOK_GEQ: return 8;
+    case TOK_SHL: case TOK_SHR: return 9;
+    case TOK_PLUS: case TOK_MINUS: return 10;
+    case TOK_STAR: case TOK_SLASH: case TOK_PERCENT: return 11;
     default: return -1;
     }
 }
@@ -403,7 +406,8 @@ static Node *parse_binop(Parser *p, int min_prec) {
         TokenKind op = p->tok.kind;
         int line = p->tok.line, col = p->tok.col;
         next(p);
-        Node *right = parse_binop(p, prec + 1);
+        int next_min = (op == TOK_RANGE || op == TOK_RANGE_INC) ? prec : (prec + 1);
+        Node *right = parse_binop(p, next_min);
         Node *n = node_new(ND_BINARY, line, col);
         n->binary.op = op;
         n->binary.left = left;
@@ -426,7 +430,33 @@ static Node *parse_expr(Parser *p) {
         n->ternary.cond = expr;
         n->ternary.then_expr = then_expr;
         n->ternary.else_expr = else_expr;
-        return n;
+        expr = n;
+    }
+    while (check(p, TOK_PIPE_OP)) {
+        next(p); /* consume |> */
+        /* parse the RHS — must be ident or call */
+        Node *rhs = parse_binop(p, 1);
+        if (rhs->kind == ND_CALL) {
+            /* insert expr as first argument */
+            int new_argc = rhs->call.arg_count + 1;
+            Node **new_args = malloc(new_argc * sizeof(Node *));
+            new_args[0] = expr;
+            for (int i = 0; i < rhs->call.arg_count; i++)
+                new_args[i + 1] = rhs->call.args[i];
+            rhs->call.args = new_args;
+            rhs->call.arg_count = new_argc;
+            expr = rhs;
+        } else if (rhs->kind == ND_IDENT) {
+            /* wrap as call: f(expr) */
+            Node *call = node_new(ND_CALL, rhs->line, rhs->col);
+            call->call.callee = rhs;
+            call->call.args = malloc(sizeof(Node *));
+            call->call.args[0] = expr;
+            call->call.arg_count = 1;
+            expr = call;
+        } else {
+            perror_at(p, "pipe RHS must be function or call");
+        }
     }
     return expr;
 }
@@ -608,9 +638,18 @@ static Node *parse_stmt(Parser *p) {
         next(p);
         Token iter = expect(p, TOK_IDENT);
         expect(p, TOK_DECL_ASSIGN);
-        Node *start_expr = parse_expr(p);
-        expect(p, TOK_RANGE);
-        Node *end_expr = parse_expr(p);
+        Node *range_expr = parse_expr(p);
+        int inclusive = 0;
+        Node *start_expr = NULL;
+        Node *end_expr = NULL;
+        if (range_expr->kind == ND_BINARY &&
+            (range_expr->binary.op == TOK_RANGE || range_expr->binary.op == TOK_RANGE_INC)) {
+            inclusive = (range_expr->binary.op == TOK_RANGE_INC);
+            start_expr = range_expr->binary.left;
+            end_expr = range_expr->binary.right;
+        } else {
+            perror_at(p, "expected range in for loop");
+        }
         Node *body = parse_block(p);
         Node *n = node_new(ND_FOR, line, col);
         /* init: i := start */
@@ -618,11 +657,11 @@ static Node *parse_stmt(Parser *p) {
         n->for_stmt.init->decl.name = tok_name(&iter);
         n->for_stmt.init->decl.decl_type = NULL;
         n->for_stmt.init->decl.init = start_expr;
-        /* cond: i < end */
+        /* cond: i < end (exclusive) or i <= end (inclusive) */
         Node *iref = node_new(ND_IDENT, line, col);
         iref->ident.name = tok_name(&iter);
         n->for_stmt.cond = node_new(ND_BINARY, line, col);
-        n->for_stmt.cond->binary.op = TOK_LT;
+        n->for_stmt.cond->binary.op = inclusive ? TOK_LEQ : TOK_LT;
         n->for_stmt.cond->binary.left = iref;
         n->for_stmt.cond->binary.right = end_expr;
         /* incr: i = i + 1 */
@@ -678,6 +717,35 @@ static Node *parse_stmt(Parser *p) {
         Node *n = node_new(ND_DEFER, line, col);
         n->defer_stmt.body = parse_stmt(p);
         return n;
+    }
+
+    /* var ID := expr | var ID = expr | var ID : type = expr */
+    if (check(p, TOK_VAR)) {
+        next(p);
+        /* eat optional 'mut' after let/var */
+        if (check(p, TOK_IDENT) && p->tok.len == 3 && memcmp(p->tok.start, "mut", 3) == 0) {
+            next(p); /* skip 'mut' */
+        }
+        Token vname = p->tok;
+        expect(p, TOK_IDENT);
+        if (match(p, TOK_DECL_ASSIGN) || match(p, TOK_ASSIGN)) {
+            Node *n = node_new(ND_DECL_STMT, line, col);
+            n->decl.name = tok_name(&vname);
+            n->decl.decl_type = NULL;
+            n->decl.init = parse_expr(p);
+            expect_nl_or_end(p);
+            return n;
+        }
+        if (match(p, TOK_COLON)) {
+            EsType *ty = parse_type(p);
+            Node *n = node_new(ND_DECL_STMT, line, col);
+            n->decl.name = tok_name(&vname);
+            n->decl.decl_type = ty;
+            n->decl.init = match(p, TOK_ASSIGN) ? parse_expr(p) : NULL;
+            expect_nl_or_end(p);
+            return n;
+        }
+        perror_at(p, "expected ':=' or ':' after 'var'");
     }
 
     /* declaration:  ID : type = expr  OR  ID := expr */
@@ -825,7 +893,23 @@ static Node *parse_fn_decl(Parser *p, bool has_kw) {
         ret = is_main ? type_basic(TY_I32) : type_basic(TY_VOID);
     }
 
-    Node *body = parse_block(p);
+    Node *body;
+    if (match(p, TOK_ASSIGN)) {
+        /* one-liner: fn name(args) = expr */
+        Node *val = parse_expr(p);
+        expect_nl_or_end(p);
+        /* wrap in block with return */
+        Node *ret_node = node_new(ND_RET, line, col);
+        ret_node->ret.value = val;
+        body = node_new(ND_BLOCK, line, col);
+        body->block.stmts = malloc(sizeof(Node *));
+        body->block.stmts[0] = ret_node;
+        body->block.count = 1;
+        /* infer return type from expression if not specified */
+        if (ret->kind == TY_VOID && !is_main) ret = type_basic(TY_I32);
+    } else {
+        body = parse_block(p);
+    }
 
     /* implicit return: convert last expr stmt to ret for non-void, non-main fns */
     if (ret->kind != TY_VOID && !is_main && body->block.count > 0) {
@@ -979,6 +1063,7 @@ Node *parser_parse_prelude(Parser *p) {
 
 Node *parser_parse(Parser *p) {
     struct { Node **items; int count; int cap; } decls = {0};
+    struct { Node **items; int count; int cap; } top_stmts = {0};
 
     /* auto-load std prelude (skipped for --wasm / --no-std) */
     Node *std = parser_no_std ? NULL : load_prelude("std");
@@ -1004,8 +1089,64 @@ Node *parser_parse(Parser *p) {
             skip_nl(p);
             continue;
         }
-        da_push(decls, parse_decl(p));
+        /* Try as declaration first */
+        if (check(p, TOK_EXT) || check(p, TOK_FN) || check(p, TOK_ST) || check(p, TOK_ENUM)) {
+            da_push(decls, parse_decl(p));
+            skip_nl(p);
+            continue;
+        }
+
+        /* keyword-free fn/struct: IDENT followed by ( then = / -> / { */
+        if (check(p, TOK_IDENT)) {
+            Token saved = p->tok;
+            Lexer saved_lex = p->lex;
+            next(p);
+            if (check(p, TOK_LBRACE)) {
+                /* IDENT{ → struct decl */
+                p->tok = saved; p->lex = saved_lex;
+                da_push(decls, parse_decl(p));
+                skip_nl(p);
+                continue;
+            }
+            if (check(p, TOK_LPAREN)) {
+                /* skip to matching ) then check for = -> { */
+                next(p);
+                int depth = 1;
+                while (depth > 0 && !check(p, TOK_EOF)) {
+                    if (check(p, TOK_LPAREN)) depth++;
+                    else if (check(p, TOK_RPAREN)) depth--;
+                    if (depth > 0) next(p);
+                }
+                if (check(p, TOK_RPAREN)) next(p);
+                bool is_decl = check(p, TOK_ASSIGN) || check(p, TOK_ARROW) || check(p, TOK_LBRACE);
+                p->tok = saved; p->lex = saved_lex;
+                if (is_decl) {
+                    da_push(decls, parse_decl(p));
+                    skip_nl(p);
+                    continue;
+                }
+            } else {
+                p->tok = saved; p->lex = saved_lex;
+            }
+        }
+
+        /* Not a declaration — treat as top-level statement */
+        da_push(top_stmts, parse_stmt(p));
         skip_nl(p);
+    }
+
+    /* If we have top-level statements, wrap in fn main() */
+    if (top_stmts.count > 0) {
+        Node *body = node_new(ND_BLOCK, 1, 1);
+        body->block.stmts = top_stmts.items;
+        body->block.count = top_stmts.count;
+        Node *main_fn = node_new(ND_FN_DECL, 1, 1);
+        main_fn->fn.name = es_strdup("main");
+        main_fn->fn.params = NULL;
+        main_fn->fn.param_count = 0;
+        main_fn->fn.ret_type = type_basic(TY_I32);
+        main_fn->fn.body = body;
+        da_push(decls, main_fn);
     }
     Node *prog = node_new(ND_PROGRAM, 1, 1);
     prog->program.decls = decls.items;

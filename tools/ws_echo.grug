@@ -1,0 +1,8 @@
+📂 head
+title = ws echo
+
+📂 body
+html = <div id='log'></div><input id='msg' placeholder='type...' autofocus><button onclick='snd()'>send</button>
+
+📂 script
+js = let w=ws('/ws'),l=ge('log'),i=ge('msg');function a(c,t){let d=ce('div');d.className=c;d.textContent=t;l.appendChild(d);l.scrollTop=l.scrollHeight}w.onopen=()=>a('s','connected');w.onmessage=e=>a('r',e.data);w.onclose=()=>a('s','disconnected');function snd(){if(i.value){w.send(i.value);a('s','> '+i.value);i.value=''}}i.onkeydown=e=>{if(e.key==='Enter')snd()}
