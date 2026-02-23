@@ -2,7 +2,8 @@
 
 This is only file written by human.
 I have a degenerate idea to slop-gen language that only llm can comprehend and build programs with it.
-
+If we assume and believe in statement that code produced in industry is not for reading but a product of llm, why do we need human readable code in the end then?
+I have decided to play around with clankers to produce the most stupid PoC to find out where I can go with it to “vibe” out some “context compact” unreadable programming language. So my motivation of this post to discuss, why do we need to produce human readable code at all? If modern programming languages semantics optimised for humans, and society (at least in all these hype posts) are being forced to generated code no one reads, why do we need to waste compute on smth that is made for human to read? What the point of this compute waste?
 
 ## How to helloworld?
 
