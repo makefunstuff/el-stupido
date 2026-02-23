@@ -1,6 +1,8 @@
 #include "parser.h"
 #include "preproc.h"
 
+int parser_no_std = 0;
+
 /* ---- helpers ---- */
 static void next(Parser *p) { p->tok = lexer_next(&p->lex); }
 
@@ -978,8 +980,8 @@ Node *parser_parse_prelude(Parser *p) {
 Node *parser_parse(Parser *p) {
     struct { Node **items; int count; int cap; } decls = {0};
 
-    /* auto-load std prelude */
-    Node *std = load_prelude("std");
+    /* auto-load std prelude (skipped for --wasm / --no-std) */
+    Node *std = parser_no_std ? NULL : load_prelude("std");
     if (std) {
         for (int i = 0; i < std->program.count; i++)
             da_push(decls, std->program.decls[i]);

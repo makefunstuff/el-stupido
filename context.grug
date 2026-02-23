@@ -7,10 +7,10 @@
 🔑 bin 👉 esc
 🔑 ext 👉 .es
 🔑 build 👉 make
-🔑 run 👉 ./esc input.es -o out [-O2]
+🔑 run 👉 ./esc input.es -o out [-O2] [--wasm]
 
 📂 lang
-🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link
+🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link (or wasm-ld for --wasm)
 🔑 features 👉 emoji kw/types/stdlib, structs, ptrs, UFCS, ✨/🗑 mem, ⚡comptime, 🔩asm, 📎macros
 🔑 new_features 👉 ➰for, 🎯match, 🏷enum, 🔜defer, fn ptrs, struct init ✨T{}, short-circuit &&/||
 🔑 std 👉 lib/std.es auto-loaded, no import needed
@@ -38,6 +38,8 @@
 🔑 map 👉 lib/map.es — string->string hashmap: map_new/map_set/map_get/map_del/map_len/map_fr
 🔑 http 👉 lib/http.es — HTTP server: http_listen/http_resp/http_send/http_path/http_fval/http_hesc/http_udec
 🔑 ws 👉 lib/ws.es — WebSocket server (RFC 6455): sha1/b64_enc/ws_handshake/ws_read/ws_send/ws_text/ws_close
+🔑 gl 👉 lib/gl.es — WebGL bridge imports for WASM: gl_clear/gl_rect/js_random
+🔑 wasm 👉 lib/wasm.es — WASM freestanding helpers: walloc/wstrlen/wstrcpy/wmemcpy/itoa_buf
 
 📂 mem
 🔑 emoji_kw 👉 sed -n '/^static TokenKind check_emoji/,/^}/p' src/lexer.c
@@ -53,3 +55,12 @@
 🔑 grugmem 👉 KV store CLI (~33 LOC, uses 📥 grug)
 🔑 gruweb 👉 .grug → HTML+CSS+JS transpiler (~81 LOC, uses 📥 grug)
 🔑 grugbook 👉 guestbook web app: fork-per-conn HTTP, .grug persistence (~100 LOC, uses 📥 grug)
+🔑 snake 👉 WebGL snake game: WASM game logic + native HTTP server (~100+40 LOC)
+
+📂 wasm
+🔑 compile 👉 ./esc prog.es --wasm -o prog.wasm (skips std.es, uses wasm-ld)
+🔑 no_std 👉 --wasm skips auto-loading lib/std.es (libc not available in WASM)
+🔑 imports 👉 🔌 extern decls become WASM imports (JS provides via env object)
+🔑 exports 👉 all 🔧 functions exported, callable from JS
+🔑 memory 👉 linear memory exported, 1MB initial, 16MB max
+🔑 freestanding 👉 no libc — use lib/gl.es or lib/wasm.es for helpers

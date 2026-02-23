@@ -1154,17 +1154,25 @@ static void cg_fn_decl(CG *g, Node *n) {
 }
 
 /* ---- public API ---- */
-int codegen(Node *program, const char *out_obj, const char *module_name, int opt_level) {
+int codegen(Node *program, const char *out_obj, const char *module_name, int opt_level, int target_wasm) {
     CG g = {0};
     g.ctx = LLVMContextCreate();
     g.mod = LLVMModuleCreateWithNameInContext(module_name, g.ctx);
     g.bld = LLVMCreateBuilderInContext(g.ctx);
 
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-    LLVMInitializeNativeAsmParser();
-
-    char *triple = LLVMGetDefaultTargetTriple();
+    char *triple;
+    if (target_wasm) {
+        LLVMInitializeWebAssemblyTargetInfo();
+        LLVMInitializeWebAssemblyTarget();
+        LLVMInitializeWebAssemblyTargetMC();
+        LLVMInitializeWebAssemblyAsmPrinter();
+        triple = LLVMCreateMessage("wasm32-unknown-unknown");
+    } else {
+        LLVMInitializeNativeTarget();
+        LLVMInitializeNativeAsmPrinter();
+        LLVMInitializeNativeAsmParser();
+        triple = LLVMGetDefaultTargetTriple();
+    }
     LLVMSetTarget(g.mod, triple);
 
     LLVMTargetRef target;
@@ -1209,6 +1217,20 @@ int codegen(Node *program, const char *out_obj, const char *module_name, int opt
         case ND_EXT_DECL: cg_ext_decl(&g, d); break;
         case ND_FN_DECL:  cg_fn_decl(&g, d);  break;
         default: es_fatal("unexpected top-level node %d", d->kind);
+        }
+    }
+
+    /* WASM: export all user-defined functions */
+    if (target_wasm) {
+        for (int i = 0; i < program->program.count; i++) {
+            Node *d = program->program.decls[i];
+            if (d->kind == ND_FN_DECL) {
+                struct Symbol *s = sym_lookup(&g, d->fn.name);
+                if (s) {
+                    LLVMSetLinkage(s->value, LLVMExternalLinkage);
+                    LLVMSetVisibility(s->value, LLVMDefaultVisibility);
+                }
+            }
         }
     }
 
