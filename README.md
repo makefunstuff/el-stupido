@@ -16,6 +16,10 @@ If we don't read the code, if rely on generation, why do we need complex grammar
 Why not to fit tiny grammar into small local model context and "embrace the vibes"
 Let compiler do the job
 
+## Ideas worth to try
+* benchmarks against local tiny models
+* generate synthetic CORRECT code for training examples to make LoRA adapters for small models
+
 ## How to helloworld?
 
 ```
