@@ -321,6 +321,15 @@ static void bf(Buf *b, const char *fmt, ...) {
     vsnprintf(tmp, sizeof(tmp), fmt, ap); va_end(ap);
     bw(b, tmp);
 }
+/* Write escaped string into a code string literal context */
+static void besc(Buf *b, const char *s) {
+    for (; *s; s++) {
+        if (*s == '"') bw(b, "\\\"");
+        else if (*s == '\\') bw(b, "\\\\");
+        else if (*s == '\n') bw(b, "\\n");
+        else bc(b, *s);
+    }
+}
 
 /* ---- Default dark theme CSS (shared with old codebook) ---- */
 static const char *THEME_CSS =
@@ -499,7 +508,9 @@ static void expand_crud(const Manifest *mf, Buf *out) {
         bf(out, "  el if %sstrcmp(&path, \"%s\") == 0 {\n", mcheck, r->path);
         if (r->action == MF_HEALTH || r->action == MF_STATIC) {
             bw(out, "    http_resp(fd, 200, \"application/json\")\n");
-            bf(out, "    http_send(fd, \"%s\")\n", r->body[0] ? r->body : "{\"ok\":true}");
+            bw(out, "    http_send(fd, \"");
+            besc(out, r->body[0] ? r->body : "{\"ok\":true}");
+            bw(out, "\")\n");
         }
         bw(out, "  }\n");
     }
@@ -647,7 +658,9 @@ static void expand_rest(const Manifest *mf, Buf *out) {
             break;
         case MF_STATIC: case MF_HEALTH:
             bw(out, "    http_resp(fd, 200, \"application/json\")\n");
-            bf(out, "    http_send(fd, \"%s\")\n", r->body[0] ? r->body : "{\"ok\":true}");
+            bw(out, "    http_send(fd, \"");
+            besc(out, r->body[0] ? r->body : "{\"ok\":true}");
+            bw(out, "\")\n");
             break;
         default: break;
         }

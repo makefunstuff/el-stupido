@@ -1,12 +1,12 @@
 {
   "domain": "crud",
-  "app": { "name": "grugbook", "port": 8080 },
+  "app": { "name": "guestbook", "port": 8080 },
   "models": [
     {
       "name": "entry",
       "fields": [
         { "name": "name", "type": "string", "required": true },
-        { "name": "msg", "type": "text", "required": true }
+        { "name": "message", "type": "text", "required": true }
       ]
     }
   ]
