@@ -1,1 +1,0 @@
-i=2;while i<=50:if all(i%j for j in range(2,i)):print(i);i+=1

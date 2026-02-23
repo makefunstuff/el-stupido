@@ -1,7 +1,0 @@
-fn main(n) {
-  for i := 1..=n { if i % 15 == 0 { printf("FizzBuzz\n") }
-  el if i % 3 == 0 { printf("Fizz\n") }
-  el if i % 5 == 0 { printf("Buzz\n") }
-  el { printf("%d\n", i) } }
-}
-

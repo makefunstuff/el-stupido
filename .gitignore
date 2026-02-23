@@ -1,24 +1,30 @@
+# build artifacts
 esc
 *.o
 *.d
 *.out
 *.wasm
+
+# compiled example binaries
 a.out
+hello
+server
 linked_list
 primes
-src/*.o
-src/*.d
+macros
 grugbook
 grugmem
 grugweb
 gruweb
-macros
-guestbook.grug
 snake_server
 invaders_server
-hello
-server
-models/
-__pycache__/
+
+# runtime data
 *.grug
-!lib/*.es
+
+# models (large, not tracked)
+models/
+
+# python
+__pycache__/
+.ruff_cache/

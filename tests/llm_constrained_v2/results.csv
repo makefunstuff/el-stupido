@@ -1,6 +1,0 @@
-model,task,constrained,c_tokens,free,f_tokens
-lfm2.5-thinking:latest,factorial,PASS,68,COMPILE_FAIL,905
-lfm2.5-thinking:latest,fizzbuzz,COMPILE_FAIL,187,COMPILE_FAIL,1024
-lfm2.5-thinking:latest,sumsq,COMPILE_FAIL,105,COMPILE_FAIL,997
-lfm2.5-thinking:latest,fibonacci,COMPILE_FAIL,160,COMPILE_FAIL,1024
-lfm2.5-thinking:latest,primes,COMPILE_FAIL,159,COMPILE_FAIL,1003

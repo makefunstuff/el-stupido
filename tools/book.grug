@@ -1,8 +1,0 @@
-📂 head
-🔑 html 👉 <!DOCTYPE html><html><head><meta charset='utf-8'><title>grugbook</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;color:#e0e0e0;font:16px/1.6 monospace;padding:2em;max-width:640px;margin:auto}.msg{background:#16213e;padding:1em;margin:.5em 0;border-radius:8px;border-left:3px solid #e94560}.nm{color:#e94560;font-weight:bold}h1{color:#e94560;margin-bottom:.5em}form{background:#16213e;padding:1em;border-radius:8px;margin-bottom:1em}input,textarea{width:100%;padding:.5em;margin:.3em 0;background:#0f3460;color:#e0e0e0;border:1px solid #e94560;border-radius:4px;font:inherit}button{background:#e94560;color:#fff;border:0;padding:.5em 1.5em;border-radius:4px;cursor:pointer;font:inherit;margin-top:.5em}</style></head><body><h1>grugbook</h1>
-
-📂 form
-🔑 html 👉 <form method='post' action='/post'><input name='name' placeholder='your name' required><textarea name='msg' rows='3' placeholder='leave a message...' required></textarea><button type='submit'>post</button></form>
-
-📂 tail
-🔑 html 👉 </body></html>

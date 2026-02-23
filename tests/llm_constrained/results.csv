@@ -1,6 +1,0 @@
-model,task,constrained,c_tokens,free,f_tokens
-qwen3:8b,factorial,PASS,52,PASS,400
-qwen3:8b,fizzbuzz,PASS,183,PASS,883
-qwen3:8b,sumsq,COMPILE_FAIL,58,PASS,765
-qwen3:8b,fibonacci,PASS,63,COMPILE_FAIL,529
-qwen3:8b,primes,COMPILE_FAIL,117,FAIL,1024

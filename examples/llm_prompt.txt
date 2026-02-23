@@ -1,1 +1,0 @@
-I want a web server on port 3000 that serves a hello page at / and an about page at /about
