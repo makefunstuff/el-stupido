@@ -29,7 +29,7 @@ What the point of this compute waste?
 <img width="939" height="739" alt="image" src="https://github.com/user-attachments/assets/5d8f1029-b609-4e28-9703-711a1d9ae3e8" />
 
 ## It can make "games"
-<img width="939" height="739" alt="image" src="https://github.com/user-attachments/assets/f17b32ed-3136-4ed0-8ac6-8e4c76009d71" />
+<img width="939" height="739" alt="image" src="https://github.com/user-attachments/assets/0693f508-1099-482d-bdbc-aee7a740db79" />
 
 
 ## PoC TODO
