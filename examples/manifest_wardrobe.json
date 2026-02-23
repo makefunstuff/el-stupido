@@ -1,0 +1,24 @@
+{
+  "domain": "crud",
+  "app": { "name": "wardrobe", "port": 3000 },
+  "models": [
+    {
+      "name": "item",
+      "fields": [
+        { "name": "name", "type": "string", "required": true },
+        { "name": "brand", "type": "string" },
+        { "name": "color", "type": "string" },
+        { "name": "slot", "type": "string", "required": true },
+        { "name": "image_url", "type": "string" }
+      ]
+    },
+    {
+      "name": "customer",
+      "fields": [
+        { "name": "name", "type": "string", "required": true },
+        { "name": "email", "type": "string", "required": true },
+        { "name": "tier", "type": "string", "required": true }
+      ]
+    }
+  ]
+}

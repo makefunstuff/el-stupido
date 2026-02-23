@@ -3,11 +3,22 @@
 
 📂 project
 🔑 name 👉 el-stupido
-🔑 desc 👉 emoji-first systems lang, C compiler, LLVM-C 21
+🔑 desc 👉 decision-manifest compiler: LLMs emit decisions, compiler does the rest
 🔑 bin 👉 esc
 🔑 ext 👉 .es
 🔑 build 👉 make
 🔑 run 👉 ./esc input.es -o out [-O2] [--wasm]
+
+📂 manifest
+🔑 core 👉 LLMs emit 30-80 tokens of JSON decisions, compiler expands deterministically
+🔑 compile 👉 ./esc --manifest app.json -o app — JSON manifest -> native binary
+🔑 expand 👉 ./esc --manifest-expand app.json — print expanded el-stupido source
+🔑 grammar 👉 ./esc --manifest-grammar — print GBNF grammar for constrained LLM output
+🔑 generate 👉 ./esc --generate prompt.txt --llm model.gguf -o app (needs LLAMA=1)
+🔑 domains 👉 crud (CRUD web app), rest (JSON API), cli (CLI tool), test (test runner)
+🔑 schema 👉 spec/manifest.json — JSON schema for decision manifests
+🔑 src 👉 src/manifest.h src/manifest.c — parser, expander, GBNF grammar
+🔑 ratios 👉 crud 17x, rest 14x, wardrobe 14x (from JSON manifest to el-stupido source)
 
 📂 lang
 🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link (or wasm-ld for --wasm)
@@ -50,6 +61,7 @@
 🔑 std 👉 cat lib/std.es
 🔑 examples 👉 ls examples/ && ls tools/
 🔑 grugmem 👉 grugmem dump
+🔑 manifest 👉 cat spec/manifest.json
 
 📂 codebooks
 🔑 web 👉 use web — HTTP/WS server: listen/route/ws/crud/tpl/save (3-6 lines -> 400+ lines)
@@ -62,6 +74,16 @@
 🔑 gruweb 👉 .grug → HTML+CSS+JS transpiler (~81 LOC, uses 📥 grug)
 🔑 grugbook 👉 guestbook web app: fork-per-conn HTTP, .grug persistence (~100 LOC, uses 📥 grug)
 🔑 snake 👉 WebGL snake game: WASM game logic + native HTTP server (~100+40 LOC)
+
+📂 llm
+🔑 build 👉 make LLAMA=1 — links llama.cpp, adds --llm and --generate flags (~5MB binary)
+🔑 old_usage 👉 ./esc --llm model.gguf input.txt -o out — LLM generates codebook from input
+🔑 new_usage 👉 ./esc --generate prompt.txt --llm model.gguf -o app — LLM -> manifest -> compile
+🔑 flags 👉 --llm <path> --llm-raw --llm-grammar --generate <prompt>
+🔑 grammar 👉 GBNF constrains LLM to valid manifest JSON (30-80 tokens)
+🔑 src 👉 src/llm.c src/llm.h — wraps llama.cpp C API (load/generate/free)
+🔑 dep 👉 deps/llama.cpp (git submodule) — static libs, CPU-only, no GPU needed
+🔑 pipeline 👉 prompt -> LLM (GBNF constrained) -> JSON manifest -> expand -> compile
 
 📂 wasm
 🔑 compile 👉 ./esc prog.es --wasm -o prog.wasm (skips std.es, uses wasm-ld)

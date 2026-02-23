@@ -1,0 +1,76 @@
+instruction,input,output,expected_codebook,notes
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","spin up an express-like service that responds to health checks and serves a landing page on the standard HTTP port","use web
+listen 80
+/ ""home page""
+/health ""ok""",web,novel vocabulary: express-like service / standard HTTP port
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","deploy a microservice on 9090 with a homepage and an about section","use web
+listen 9090
+/ ""home page""
+/about ""about us""",web,uses deploy/microservice/section vocabulary
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need something to manage my recipes. Each recipe has a title and ingredients. Put it on 5000","use web
+listen 5000
+crud recipe title ingredients+",crud,casual/vague - model must infer CRUD from manage
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","kanban board app on port 3000 where each card has a title status and assignee","use web
+listen 3000
+crud card title status assignee",crud,novel domain - kanban/card not in training
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","write me a unix grep clone with case insensitive and line number flags","use cli
+name ""grep""
+desc ""search files for patterns""
+flag ignore_case -i ""case insensitive""
+flag number -n ""number lines""
+arg pattern ""regex pattern""
+arg file ""file to search""",cli,references unix grep clone - not template language
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","command line password generator with a length argument and a special characters flag","use cli
+name ""passgen""
+desc ""generate passwords""
+flag special -s ""include special characters""
+arg length ""password length""",cli,completely novel tool not in training data
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","RESTful microservice for a blog. Posts have title body and author. Comments have user and text. Run on 8080","use rest
+listen 8080
+model post title body author
+model comment user text
+GET /posts list post
+POST /posts create post
+GET /comments list comment
+POST /comments create comment",rest,multi-model + novel framing (blog)
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","backend for an e-commerce store on port 4000: products with name price and description plus orders with customer and total","use rest
+listen 4000
+model product name price description
+model order customer total
+GET /products list product
+POST /products create product
+GET /orders list order
+POST /orders create order",rest,e-commerce domain - completely OOD
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","443 https server showing version info at /v and a welcome message at root","use web
+listen 443
+/ ""welcome""
+/v ""v1.0""",web,non-standard phrasing: root instead of / and /v shorthand
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","dashboard on 8000 with a status page an about page and a task tracker with title and priority","use web
+listen 8000
+/status ""ok""
+/about ""about us""
+crud task title priority",combo,mixed routes+CRUD in one description
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","file diff tool for comparing two files with a color output flag and a context lines flag","use cli
+name ""diff""
+desc ""compare two files""
+flag color -c ""color output""
+flag context -n ""context lines""
+arg file1 ""first file""
+arg file2 ""second file""",cli,novel tool - diff not in training set
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","just a simple hello world server on 3000","use web
+listen 3000
+/ ""hello world""",web,minimal/terse input
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","inventory management system: items have sku name quantity and location. REST API on 5000 please","use rest
+listen 5000
+model item sku name quantity location
+GET /items list item
+POST /items create item",rest,business domain inventory/sku not in training
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","todo list with title and done fields on port 8080","use web
+listen 8080
+crud todo title done",crud,ambiguous - could be REST or CRUD web app
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","log analyzer tool that reads a file and has verbose and json output flags","use cli
+name ""logana""
+desc ""analyze log files""
+flag verbose -v ""verbose output""
+flag json -j ""json output""
+arg file ""log file to analyze""",cli,novel tool + novel flag (json output)

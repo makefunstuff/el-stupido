@@ -1,0 +1,1527 @@
+instruction,input,output
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please build a message manager on port 8000, fields: from, text+","use web
+listen 8000
+crud message from text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a backend service on port 9000 with a message model having from, to, body fields","use rest
+listen 9000
+model message from to body
+GET /messages list message
+POST /messages create message"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","multi-model api on port 9000: user (name, email) + task (title, status, priority)","use rest
+listen 9000
+model user name email
+model task title status priority
+GET /users list user
+POST /users create user
+GET /tasks list task
+POST /tasks create task"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a user database app at port 9000 storing name/email,"use web
+listen 9000
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please create a basic website running on port 9000 that displays a /api page with ""api v1"", /health saying ""ok"", plus ""about this server"" at /about","use web
+listen 9000
+/api ""api v1""
+/health ""ok""
+/about ""about this server"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","give me a JSON API to manage users on port 443, fields: username, email, role","use rest
+listen 443
+model user username email role
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly shell tool wc to count words in files,"use cli
+name ""wc""
+desc ""count words in files""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, set up a server at port 9000 serving ""alive"" at /status","use web
+listen 9000
+/status ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","backend for products on 80 with name, price","use rest
+listen 80
+model product name price
+GET /products list product
+POST /products create product
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","entry app, port 4000, store key and value please","use web
+listen 4000
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","serve content on 80 with /health that shows ""ok"" please","use web
+listen 80
+/health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly create an HTTP server listening on 5000 that serves / that shows ""home page"", /hello saying ""hello!"", /health that shows ""up"" and ""0.0.1"" at /version","use web
+listen 5000
+/ ""home page""
+/hello ""hello!""
+/health ""up""
+/version ""0.0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a server at port 80 serving /about returning ""about us"" please","use web
+listen 80
+/about ""about us"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","give me a JSON API to manage posts on port 443, fields: title, body, author","use rest
+listen 443
+model post title body author
+GET /posts list post
+POST /posts create post"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","http 3000: ""hello world"" at / plus ""0.0.1"" at /version","use web
+listen 3000
+/ ""hello world""
+/version ""0.0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",set up a todo form on port 9090 that saves task and status,"use web
+listen 9090
+crud todo task status"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",web form for task entries with title and status on port 5000,"use web
+listen 5000
+crud task title status"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","spin up an HTTP server on port 80 with ""welcome!"" at / plus /version saying ""1.0.0""","use web
+listen 80
+/ ""welcome!""
+/version ""1.0.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Backend on port 8080 for tasks and items with their fields,"use rest
+listen 8080
+model task title status priority
+model item name desc price
+GET /tasks list task
+POST /tasks create task
+GET /items list item
+POST /items create item
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build an API on port 8080 managing tasks and events,"use rest
+listen 8080
+model task title status priority
+model event name date location
+GET /tasks list task
+POST /tasks create task
+GET /events list event
+POST /events create event
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",cli sort for sorting lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+flag numeric -n ""numeric sort""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please web server on port 8888 with /version showing ""0.0.1""; /status showing ""all systems go"" and a link CRUD with name and href","use web
+listen 8888
+/version ""0.0.1""
+/status ""all systems go""
+crud link name href"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","REST API on port 443 with posts (title, body, author) and events (name, date, location)","use rest
+listen 443
+model post title body author
+model event name date location
+GET /posts list post
+POST /posts create post
+GET /events list event
+POST /events create event"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","microservice on port 9090 for comments (user, text)","use rest
+listen 9090
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a REST service at 80 for events: name, date, location","use rest
+listen 80
+model event name date location
+GET /events list event
+POST /events create event
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a server on port 3000 that has / showing ""hi there"" and /hello showing ""hello world"" and a post manager (title and body+)","use web
+listen 3000
+/ ""hi there""
+/hello ""hello world""
+crud post title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",write a command-line application named hash whose purpose is to compute file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag md5 -m ""use md5""
+flag sha256 -s ""use sha256""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a lightweight http server bound to port 8888 with the following pages: /version saying ""v1.0""; /api returning ""api v1""; / saying ""home page""; ""alive"" at /health","use web
+listen 8888
+/version ""v1.0""
+/api ""api v1""
+/ ""home page""
+/health ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a backend service on port 9999 with a user model having username, email, role fields","use rest
+listen 9999
+model user username email role
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",I need a terminal tool called serve to serve static files,"use cli
+name ""serve""
+desc ""serve static files""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, API server on port 4000 for comment with user, text","use rest
+listen 4000
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","todo api on 4000: title, done","use rest
+listen 4000
+model todo title done
+GET /todos list todo
+POST /todos create todo"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",serve tool: serve static files,"use cli
+name ""serve""
+desc ""serve static files""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, I need a website on port 4000 with /hello returning ""hey there"", ""1.0.0"" at /version, /status that shows ""up""","use web
+listen 4000
+/hello ""hey there""
+/version ""1.0.0""
+/status ""up"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly data entry app for comments (user/text+) on port 3000,"use web
+listen 3000
+crud comment user text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly make me a find utility that finding files by name,"use cli
+name ""find""
+desc ""find files by name""
+flag recursive -r ""search recursively""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need an API for users on port 9999 with username, email, role","use rest
+listen 9999
+model user username email role
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please build a CLI program named ping for checking host availability,"use cli
+name ""ping""
+desc ""check host availability""
+flag count -c ""ping count""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build an API on port 8080 managing events and products,"use rest
+listen 8080
+model event name date location
+model product name price
+GET /events list event
+POST /events create event
+GET /products list product
+POST /products create product
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",I'd like a terminal utility called serve that can serve static files please,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'm looking for a simple web server that listens on port 8080 and serves ""v1.0"" at /version, /api that shows ""json api"", ""up"" at /health and ""alive"" at /status","use web
+listen 8080
+/version ""v1.0""
+/api ""json api""
+/health ""up""
+/status ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",console app called sort for sorting lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+flag unique -u ""unique lines only""
+flag numeric -n ""numeric sort""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",write a command-line application named sort whose purpose is to sort lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+flag reverse -r ""reverse sort""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","give me a web server at port 3000 that has /health that shows ""alive""","use web
+listen 3000
+/health ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly REST API on port 5000 with posts (title, body, author) and events (name, date, location)","use rest
+listen 5000
+model post title body author
+model event name date location
+GET /posts list post
+POST /posts create post
+GET /events list event
+POST /events create event"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Can you make a REST API on port 443 for comments with user, text","use rest
+listen 443
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 9999 with / showing ""main page"" and /api showing ""api v1"" and a entry CRUD with title and body+","use web
+listen 9999
+/ ""main page""
+/api ""api v1""
+crud entry title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Server on port 8000 with /health showing ""ok""; /api showing ""api v1"" and task tracking (name and priority)","use web
+listen 8000
+/health ""ok""
+/api ""api v1""
+crud task name priority"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","microservice on port 80 for bookmarks (title, url)","use rest
+listen 80
+model bookmark title url
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a server on port 3000 that has /status showing ""ok"", /version showing ""v1.0"" and a note manager (title and body+)","use web
+listen 3000
+/status ""ok""
+/version ""v1.0""
+crud note title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a hash utility that computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","event api on 8888: name, date, location","use rest
+listen 8888
+model event name date location
+GET /events list event
+POST /events create event"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly CRUD API on port 443: note with title, content","use rest
+listen 443
+model note title content
+GET /notes list note
+POST /notes create note"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly create a item database app at port 5000 storing title/desc,"use web
+listen 5000
+crud item title desc"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a command-line tool named sort for sorting lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+flag reverse -r ""reverse sort""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","make a REST API for messages on port 4000 with fields from, to, body please","use rest
+listen 4000
+model message from to body
+GET /messages list message
+POST /messages create message
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","http 4000: /about that shows ""el-stupido web server"", /api saying ""api v1"", /health returning ""alive"", plus a /version page with ""0.0.1"" please","use web
+listen 4000
+/about ""el-stupido web server""
+/api ""api v1""
+/health ""alive""
+/version ""0.0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","spin up an HTTP server on port 3000 with /version saying ""v1.0""","use web
+listen 3000
+/version ""v1.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please build a CLI program named hash for computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag sha256 -s ""use sha256""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create a crud app for items with name and price, port 8080","use web
+listen 8080
+crud item name price"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a hash utility that computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a REST service at 5000 for tasks: title, status, priority","use rest
+listen 5000
+model task title status priority
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please I need a terminal tool called serve to serve static files,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a message database app at port 8888 storing sender/body+,"use web
+listen 8888
+crud message sender body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","multi-model API on port 80: comment (user, text) + bookmark (title, url)","use rest
+listen 80
+model comment user text
+model bookmark title url
+GET /comments list comment
+POST /comments create comment
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Build me a guestbook CRUD on port 9999 (name and msg+),"use web
+listen 9999
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",command-line cat tool for concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",program find that finding files by name from the terminal,"use cli
+name ""find""
+desc ""find files by name""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","rest comment user, text on 4000","use rest
+listen 4000
+model comment user text
+GET /comments list comment
+POST /comments create comment"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","make a web server on port 9999 with ""hi there"" at /","use web
+listen 9999
+/ ""hi there"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please write a command-line application named calc whose purpose is to simple calculator,"use cli
+name ""calc""
+desc ""simple calculator""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly JSON API on 3000 for todos (title, done) and bookmarks (title, url)","use rest
+listen 3000
+model todo title done
+model bookmark title url
+GET /todos list todo
+POST /todos create todo
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Launch a web server at 8000 that responds with /version returning ""0.0.1"" and /hello returning ""hello world""","use web
+listen 8000
+/version ""0.0.1""
+/hello ""hello world"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please create a basic website running on port 9090 that displays /health saying ""ok""; ""1.0.0"" at /version","use web
+listen 9090
+/health ""ok""
+/version ""1.0.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please I need an API for events on port 9000 with name, date, location","use rest
+listen 9000
+model event name date location
+GET /events list event
+POST /events create event
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a unix-style tool called cat to concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, I need a website on port 80 with ""1.0.0"" at /version, /status returning ""running"", /health returning ""ok"", plus /hello returning ""hello world""","use web
+listen 80
+/version ""1.0.0""
+/status ""running""
+/health ""ok""
+/hello ""hello world"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","server on port 9999 with /status showing ""ok"" and guestbook tracking (name and msg+)","use web
+listen 9999
+/status ""ok""
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","can you build a server on port 5000 with / returning ""hello world"", /health saying ""alive"", plus /hello that shows ""hello!""","use web
+listen 5000
+/ ""hello world""
+/health ""alive""
+/hello ""hello!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",command-line find tool for finding files by name,"use cli
+name ""find""
+desc ""find files by name""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly REST API on port 5000 with notes (title, content) and users (username, email, role)","use rest
+listen 5000
+model note title content
+model user username email role
+GET /notes list note
+POST /notes create note
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","API server on port 8888 for user with username, email, role please","use rest
+listen 8888
+model user username email role
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 9999 with /about showing ""about page"", /hello showing ""hi!"" and a guestbook CRUD with author and text+ please","use web
+listen 9999
+/about ""about page""
+/hello ""hi!""
+crud guestbook author text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, rest product name, price on 80","use rest
+listen 80
+model product name price
+GET /products list product
+POST /products create product
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need an API on port 5000 with two models: user (username, email, role) and users_alt (name, email) please","use rest
+listen 5000
+model user username email role
+model users_alt name email
+GET /users list user
+POST /users create user
+GET /users_alts list users_alt
+POST /users_alts create users_alt
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly api 5000 user name, email","use rest
+listen 5000
+model user name email
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on 9000 with pages /health showing ""up"" and CRUD for comments (author and body+)","use web
+listen 9000
+/health ""up""
+crud comment author body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'd like a simple HTTP server on 9090 serving / returning ""welcome!""","use web
+listen 9090
+/ ""welcome!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a unix-style tool called sort to sort lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+flag reverse -r ""reverse sort""
+flag numeric -n ""numeric sort""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",console app called cat for concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+flag blank -b ""skip blank lines""
+flag number -n ""number lines""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","expose an endpoint on port 8080 with a /health page with ""up"" and ""v1.0"" at /version","use web
+listen 8080
+/health ""up""
+/version ""v1.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","give me a JSON API to manage posts on port 8080, fields: title, body, author","use rest
+listen 8080
+model post title body author
+GET /posts list post
+POST /posts create post
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","rest post title, body, author on 3000","use rest
+listen 3000
+model post title body author
+GET /posts list post
+POST /posts create post
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need an API on port 3000 with two models: comment (user, text) and user (name, email)","use rest
+listen 3000
+model comment user text
+model user name email
+GET /comments list comment
+POST /comments create comment
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on 4000 with pages /version showing ""0.0.1"" and CRUD for users (name and email)","use web
+listen 4000
+/version ""0.0.1""
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","json api for managing users on port 8888, fields: username, email, role","use rest
+listen 8888
+model user username email role
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","microservice on port 5000 for users (name, email)","use rest
+listen 5000
+model user name email
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up an API on port 443 for notes (title, content)","use rest
+listen 443
+model note title content
+GET /notes list note
+POST /notes create note"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build a grep command that searching files for patterns,"use cli
+name ""grep""
+desc ""search files for patterns""
+flag verbose -v ""enable verbose output""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","REST API, port 8000, model message with from, to, body please","use rest
+listen 8000
+model message from to body
+GET /messages list message
+POST /messages create message"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","data service for tasks at port 8000, title, status, priority","use rest
+listen 8000
+model task title status priority
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please REST API on port 8888 with items (name, desc, price) and bookmarks (title, url)","use rest
+listen 8888
+model item name desc price
+model bookmark title url
+GET /items list item
+POST /items create item
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a simple server on port 80: /status returning ""alive""","use web
+listen 80
+/status ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",command-line head tool for showing first lines,"use cli
+name ""head""
+desc ""show first lines""
+arg count ""number of lines""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a serve utility that serving static files,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'm looking for a simple web server that listens on port 9000 and serves ""about this server"" at /about, ""0.0.1"" at /version","use web
+listen 9000
+/about ""about this server""
+/version ""0.0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, web server, port 8000, /about that shows ""built with el-stupido"" and /status returning ""ok""","use web
+listen 8000
+/about ""built with el-stupido""
+/status ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",develop a cat utility for concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","CRUD API on port 9000: todo with title, done","use rest
+listen 9000
+model todo title done
+GET /todos list todo
+POST /todos create todo
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 8000 with / showing ""server is running"" and /status showing ""all systems go"" and a user CRUD with name and email","use web
+listen 8000
+/ ""server is running""
+/status ""all systems go""
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a server on port 80 that has / showing ""index"" plus /version showing ""1.0.0"" and a guestbook manager (name and msg+)","use web
+listen 80
+/ ""index""
+/version ""1.0.0""
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please build an API on port 3000 managing users and tasks,"use rest
+listen 3000
+model user username email role
+model task title status priority
+GET /users list user
+POST /users create user
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","data service for comments at port 9999, user, text","use rest
+listen 9999
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Set up a REST service at 8080 for comments: user, text","use rest
+listen 8080
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, I'd like a JSON REST API running on port 443 for CRUD operations on items with name, desc, price","use rest
+listen 443
+model item name desc price
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create a RESTful web service on port 5000 that manages note resources with fields title, content please","use rest
+listen 5000
+model note title content
+GET /notes list note
+POST /notes create note"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a backend service on port 9000 with a item model having name, desc, price fields","use rest
+listen 9000
+model item name desc price
+GET /items list item
+POST /items create item
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","JSON API for managing products on port 3000, fields: name, price","use rest
+listen 3000
+model product name price
+GET /products list product
+POST /products create product"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly create a REST service on port 3000 that handles messages with from, to, body and items with name, desc, price","use rest
+listen 3000
+model message from to body
+model item name desc price
+GET /messages list message
+POST /messages create message
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a entry manager on port 8888, fields: key and value","use web
+listen 8888
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want to manage users with name, email fields, serve on 9000","use web
+listen 9000
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","rest api on port 9000 with messages (from, to, body) and users (username, email, role)","use rest
+listen 9000
+model message from to body
+model user username email role
+GET /messages list message
+POST /messages create message
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on 3000 with pages /version showing ""0.0.1"" and CRUD for guestbooks (author and text+) please","use web
+listen 3000
+/version ""0.0.1""
+crud guestbook author text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",write a command-line application named cat whose purpose is to concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+flag blank -b ""skip blank lines""
+flag number -n ""number lines""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",program calc that simple calculator from the terminal,"use cli
+name ""calc""
+desc ""simple calculator""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, please build a CLI program named grep for searching files for patterns","use cli
+name ""grep""
+desc ""search files for patterns""
+flag ignore_case -i ""case insensitive""
+flag count -c ""show count only""
+flag verbose -v ""enable verbose output""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Create a CRUD app for bookmarks with name and link, port 8888","use web
+listen 8888
+crud bookmark name link"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please build a CLI program named head for showing first lines please,"use cli
+name ""head""
+desc ""show first lines""
+arg count ""number of lines""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","serve on port 4000: a / page with ""index"" and /status returning ""ok""","use web
+listen 4000
+/ ""index""
+/status ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, build a entry manager on port 9999, fields: key/value","use web
+listen 9999
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, console app called calc for simple calculator","use cli
+name ""calc""
+desc ""simple calculator""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please server on port 8000 with / showing ""main page""; /status showing ""ok"" and guestbook tracking (author and text+)","use web
+listen 8000
+/ ""main page""
+/status ""ok""
+crud guestbook author text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","API server on port 9000 for bookmark with title, url","use rest
+listen 9000
+model bookmark title url
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create a CRUD app for items with name, price, port 80","use web
+listen 80
+crud item name price"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, HTTP server on 9999 with pages /health showing ""up""; /version showing ""v1.0"" and CRUD for tasks (name and priority)","use web
+listen 9999
+/health ""up""
+/version ""v1.0""
+crud task name priority"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","can you build a REST API on port 4000 for tasks with title, status, priority","use rest
+listen 4000
+model task title status priority
+GET /tasks list task
+POST /tasks create task"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web 3000 /api that shows ""api v1"", /health returning ""up"" please","use web
+listen 3000
+/api ""api v1""
+/health ""up"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a server on port 3000 that has / showing ""server is running"" and /api showing ""rest endpoint"" and a item manager (title and desc)","use web
+listen 3000
+/ ""server is running""
+/api ""rest endpoint""
+crud item title desc"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want a web server on port 3000 with a /about page with ""about page""; /version saying ""v1.0""; /hello that shows ""hey there""; / that shows ""main page""","use web
+listen 3000
+/about ""about page""
+/version ""v1.0""
+/hello ""hey there""
+/ ""main page"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Run a site on port 3000 with /version that shows ""0.0.1"", ""hello world"" at /","use web
+listen 3000
+/version ""0.0.1""
+/ ""hello world"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","stand up an HTTP listener on 9090 serving /about saying ""built with el-stupido"" plus a /version page with ""v0.1""","use web
+listen 9090
+/about ""built with el-stupido""
+/version ""v0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","API server on 4000: comment (user, text), task (title, status, priority)","use rest
+listen 4000
+model comment user text
+model task title status priority
+GET /comments list comment
+POST /comments create comment
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build an API on port 443 managing bookmarks and items,"use rest
+listen 443
+model bookmark title url
+model item name desc price
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",CLI tool: hash - compute file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",program calc that simple calculator from the terminal,"use cli
+name ""calc""
+desc ""simple calculator""
+flag verbose -v ""show steps""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",develop a grep utility for searching files for patterns,"use cli
+name ""grep""
+desc ""search files for patterns""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly make a REST API for users on port 9090 with fields name, email","use rest
+listen 9090
+model user name email
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Website on 80: /health showing ""ok"", plus manage guestbooks with name and msg+","use web
+listen 80
+/health ""ok""
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please give me a JSON API to manage posts on port 80, fields: title, body, author","use rest
+listen 80
+model post title body author
+GET /posts list post
+POST /posts create post"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a hash utility that computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag md5 -m ""use md5""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","API server on port 3000 for user with username, email, role","use rest
+listen 3000
+model user username email role
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly spin up an HTTP server on port 9000 with /api saying ""rest endpoint"" and a /hello page with ""hello!""","use web
+listen 9000
+/api ""rest endpoint""
+/hello ""hello!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","generate a JSON API for task on port 5000: title, status, priority","use rest
+listen 5000
+model task title status priority
+GET /tasks list task
+POST /tasks create task"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 9999 with / showing ""home page"" and a entry CRUD with title and body+","use web
+listen 9999
+/ ""home page""
+crud entry title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a server on port 4000 that has /status showing ""alive"" plus /api showing ""json api"" and a user manager (username and role)","use web
+listen 4000
+/status ""alive""
+/api ""json api""
+crud user username role"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build a grep command that searching files for patterns,"use cli
+name ""grep""
+desc ""search files for patterns""
+flag count -c ""show count only""
+flag verbose -v ""enable verbose output""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",post manager with author and content+ on port 8080,"use web
+listen 8080
+crud post author content+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",ping command that checking host availability,"use cli
+name ""ping""
+desc ""check host availability""
+flag count -c ""ping count""
+flag verbose -v ""show details""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",cli ping for checking host availability,"use cli
+name ""ping""
+desc ""check host availability""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please make a web server on port 8888 with /status that shows ""up"", /api saying ""api v1"", ""hi there"" at / and /health returning ""up""","use web
+listen 8888
+/status ""up""
+/api ""api v1""
+/ ""hi there""
+/health ""up"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 443 with /version showing ""v0.1"", /status showing ""healthy"" and a post CRUD with author and content+","use web
+listen 443
+/version ""v0.1""
+/status ""healthy""
+crud post author content+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","api 9000 user username, email, role","use rest
+listen 9000
+model user username email role
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a lightweight HTTP server bound to port 8000 with the following pages: /status saying ""up"", ""about this server"" at /about, plus /health that shows ""alive""","use web
+listen 8000
+/status ""up""
+/about ""about this server""
+/health ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","multi-model API on port 8000: event (name, date, location) + bookmark (title, url)","use rest
+listen 8000
+model event name date location
+model bookmark title url
+GET /events list event
+POST /events create event
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need a website on port 3000 with /version that shows ""v0.1""","use web
+listen 3000
+/version ""v0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a grep utility that searching files for patterns,"use cli
+name ""grep""
+desc ""search files for patterns""
+flag ignore_case -i ""case insensitive""
+flag verbose -v ""enable verbose output""
+flag count -c ""show count only""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly data service for events at port 8888, name, date, location","use rest
+listen 8888
+model event name date location
+GET /events list event
+POST /events create event"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly server on port 8888 with /status showing ""running"" and todo tracking (task and status)","use web
+listen 8888
+/status ""running""
+crud todo task status"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please please create a basic website running on port 9000 that displays ""json api"" at /api","use web
+listen 9000
+/api ""json api"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please JSON API for managing users on port 8080, fields: name, email","use rest
+listen 8080
+model user name email
+GET /users list user
+POST /users create user"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","run a site on port 4000 with /about returning ""about this server""; a /hello page with ""hi!""; / saying ""home page""; /version returning ""v0.1""","use web
+listen 4000
+/about ""about this server""
+/hello ""hi!""
+/ ""home page""
+/version ""v0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",command-line serve tool for serving static files,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",shell tool find to find files by name please,"use cli
+name ""find""
+desc ""find files by name""
+flag hidden -h ""include hidden files""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please bookmark manager with title and url on port 9999,"use web
+listen 9999
+crud bookmark title url"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make a task app with fields title and status on port 9000,"use web
+listen 9000
+crud task title status"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly make a web server on port 8000 with a /status page with ""alive"", /about saying ""a tiny web server"", ""main page"" at /, /api that shows ""json api""","use web
+listen 8000
+/status ""alive""
+/about ""a tiny web server""
+/ ""main page""
+/api ""json api"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",simple bookmark app at port 9999 with title and url fields please,"use web
+listen 9999
+crud bookmark title url"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","JSON API on 9999 for notes (title, content) and users (username, email, role)","use rest
+listen 9999
+model note title content
+model user username email role
+GET /notes list note
+POST /notes create note
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","JSON API on 8000 for products (name, price) and events (name, date, location)","use rest
+listen 8000
+model product name price
+model event name date location
+GET /products list product
+POST /products create product
+GET /events list event
+POST /events create event
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a server at port 8080 serving /hello returning ""hey there"", ""v1.0"" at /version, /status that shows ""ok"" and ""hello from el-stupido!"" at /","use web
+listen 8080
+/hello ""hey there""
+/version ""v1.0""
+/status ""ok""
+/ ""hello from el-stupido!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 4000 with /about showing ""about page"" and /api showing ""rest endpoint"" and a task CRUD with name and priority","use web
+listen 4000
+/about ""about page""
+/api ""rest endpoint""
+crud task name priority"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","spin up an HTTP server on port 5000 with a /health page with ""ok"", ""all systems go"" at /status, plus a /version page with ""v0.1""","use web
+listen 5000
+/health ""ok""
+/status ""all systems go""
+/version ""v0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on 5000 with pages /about showing ""about page"" and CRUD for posts (author and content+)","use web
+listen 5000
+/about ""about page""
+crud post author content+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Can you create a wc command for counting words in files,"use cli
+name ""wc""
+desc ""count words in files""
+flag lines -l ""count lines only""
+flag bytes -b ""count bytes""
+flag words -w ""count words only""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'm looking for a simple web server that listens on port 9090 and serves /version that shows ""v0.1""; /health saying ""ok""","use web
+listen 9090
+/version ""v0.1""
+/health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want to manage bookmarks with title and url fields, serve on 3000","use web
+listen 3000
+crud bookmark title url"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please HTTP server on 5000 with pages /health showing ""alive"" and CRUD for guestbooks (name and msg+)","use web
+listen 5000
+/health ""alive""
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'd like a simple HTTP server on 9000 serving /version saying ""v0.1""; a /hello page with ""hey there""; /api that shows ""json api""; ""about page"" at /about","use web
+listen 9000
+/version ""v0.1""
+/hello ""hey there""
+/api ""json api""
+/about ""about page"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please cli ping for checking host availability,"use cli
+name ""ping""
+desc ""check host availability""
+flag verbose -v ""show details""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create an HTTP server listening on 443 that serves /status saying ""healthy""; /about that shows ""about page""; / saying ""welcome!""","use web
+listen 443
+/status ""healthy""
+/about ""about page""
+/ ""welcome!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please I'd like a JSON REST API running on port 9000 for CRUD operations on items with name, desc, price","use rest
+listen 9000
+model item name desc price
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","multi-model API on port 9000: user (username, email, role) + item (name, desc, price)","use rest
+listen 9000
+model user username email role
+model item name desc price
+GET /users list user
+POST /users create user
+GET /items list item
+POST /items create item
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","make a web server on port 8888 with / that shows ""main page""","use web
+listen 8888
+/ ""main page"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","serve on port 443: ""about us"" at /about, /hello returning ""hi!""","use web
+listen 443
+/about ""about us""
+/hello ""hi!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, web app for managing users on port 5000 with name, email","use web
+listen 5000
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create an HTTP server listening on 443 that serves a / page with ""server is running"", /hello that shows ""hello world"", /api returning ""json api"", /status saying ""all systems go""","use web
+listen 443
+/ ""server is running""
+/hello ""hello world""
+/api ""json api""
+/status ""all systems go"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Set up a note form on port 9999 that saves title and body+,"use web
+listen 9999
+crud note title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please serve on port 5000: /api that shows ""api v1"", ""greetings"" at /, plus /version that shows ""v1.0""","use web
+listen 5000
+/api ""api v1""
+/ ""greetings""
+/version ""v1.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","server on port 8888 with /hello showing ""hi!"" and user tracking (name and email)","use web
+listen 8888
+/hello ""hi!""
+crud user name email"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a backend service on port 443 with a user model having name, email fields","use rest
+listen 443
+model user name email
+GET /users list user
+POST /users create user
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please set up a user form on port 8000 that saves username and role,"use web
+listen 8000
+crud user username role"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want to manage guestbooks with author, text+ fields, serve on 9090","use web
+listen 9090
+crud guestbook author text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",web form for entry entries with key and value on port 9999,"use web
+listen 9999
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",persistent comment app on 80 with user and text+ please,"use web
+listen 80
+crud comment user text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",give me a CLI hash that computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag md5 -m ""use md5""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","website on 8080: /about showing ""el-stupido web server"", plus manage links with title and url","use web
+listen 8080
+/about ""el-stupido web server""
+crud link title url"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","API server on 4000: task (title, status, priority), post (title, body, author)","use rest
+listen 4000
+model task title status priority
+model post title body author
+GET /tasks list task
+POST /tasks create task
+GET /posts list post
+POST /posts create post"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly spin up an HTTP server on port 8080 with a /hello page with ""hey there"", / saying ""hello from el-stupido!"", a /status page with ""all systems go"", ""0.0.1"" at /version","use web
+listen 8080
+/hello ""hey there""
+/ ""hello from el-stupido!""
+/status ""all systems go""
+/version ""0.0.1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need a task tracker on port 3000 with name, priority","use web
+listen 3000
+crud task name priority"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",program find that finding files by name from the terminal,"use cli
+name ""find""
+desc ""find files by name""
+flag hidden -h ""include hidden files""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","persistent message app on 8000 with from, text+","use web
+listen 8000
+crud message from text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a simple server on port 80: /hello returning ""hi!"", /health that shows ""alive"" and /status saying ""up""","use web
+listen 80
+/hello ""hi!""
+/health ""alive""
+/status ""up"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly deploy a web server on port 3000 that handles requests for /about that shows ""about this server""","use web
+listen 3000
+/about ""about this server"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, I need an API for comments on port 9090 with user, text","use rest
+listen 9090
+model comment user text
+GET /comments list comment
+POST /comments create comment
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please I'd like a terminal utility called calc that can simple calculator,"use cli
+name ""calc""
+desc ""simple calculator""
+flag verbose -v ""show steps""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I need a website on port 443 with / returning ""main page"" plus ""rest endpoint"" at /api please","use web
+listen 443
+/ ""main page""
+/api ""rest endpoint"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please command-line serve tool for serving static files,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly I want a REST endpoint for messages at port 8080 with from, to, body","use rest
+listen 8080
+model message from to body
+GET /messages list message
+POST /messages create message"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",cli cat for concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, create a JSON API for todo on port 8000: title, done","use rest
+listen 8000
+model todo title done
+GET /todos list todo
+POST /todos create todo
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","REST API on port 9999 with todos (title, done) and notes (title, content)","use rest
+listen 9999
+model todo title done
+model note title content
+GET /todos list todo
+POST /todos create todo
+GET /notes list note
+POST /notes create note
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",CRUD for entry on port 8000: key and value,"use web
+listen 8000
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly website on 3000: /status showing ""ok"" plus / showing ""main page"", plus manage posts with title and body+","use web
+listen 3000
+/status ""ok""
+/ ""main page""
+crud post title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on port 80 with pages: ""api v1"" at /api; /about saying ""built with el-stupido""; ""ok"" at /status; / returning ""index""","use web
+listen 80
+/api ""api v1""
+/about ""built with el-stupido""
+/status ""ok""
+/ ""index"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly CLI tool: ping - check host availability,"use cli
+name ""ping""
+desc ""check host availability""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, CLI tool: head - show first lines","use cli
+name ""head""
+desc ""show first lines""
+flag quiet -q ""suppress headers""
+arg count ""number of lines""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 8080 with /status showing ""healthy"" and /api showing ""rest endpoint"" and a entry CRUD with key and value","use web
+listen 8080
+/status ""healthy""
+/api ""rest endpoint""
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'm looking for a simple web server that listens on port 8000 and serves ""hello!"" at /hello, /status returning ""up"", a /api page with ""api v1""","use web
+listen 8000
+/hello ""hello!""
+/status ""up""
+/api ""api v1"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","create a rest service on port 8888 that handles events with name, date, location and comments with user, text","use rest
+listen 8888
+model event name date location
+model comment user text
+GET /events list event
+POST /events create event
+GET /comments list comment
+POST /comments create comment"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on 443 with pages /hello showing ""hello world"" and CRUD for guestbooks (name and msg+) please","use web
+listen 443
+/hello ""hello world""
+crud guestbook name msg+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",develop a cat utility for concatenate files please,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'm looking for a simple web server that listens on port 8888 and serves /health that shows ""healthy"" please","use web
+listen 8888
+/health ""healthy"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","can you make a server on port 9999 with ""server is running"" at /; /version returning ""0.0.1""; a /health page with ""up""; /status that shows ""alive"" please","use web
+listen 9999
+/ ""server is running""
+/version ""0.0.1""
+/health ""up""
+/status ""alive"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",backend on port 5000 for todos and bookmarks with their fields,"use rest
+listen 5000
+model todo title done
+model bookmark title url
+GET /todos list todo
+POST /todos create todo
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please build a server on port 8888 that has /about showing ""about this server"", /api showing ""rest endpoint"" and a item manager (title and desc)","use web
+listen 8888
+/about ""about this server""
+/api ""rest endpoint""
+crud item title desc"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","expose an endpoint on port 8888 with /status saying ""alive"" plus /api returning ""json api""","use web
+listen 8888
+/status ""alive""
+/api ""json api"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",shell tool wc to count words in files,"use cli
+name ""wc""
+desc ""count words in files""
+flag bytes -b ""count bytes""
+flag lines -l ""count lines only""
+flag words -w ""count words only""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Find command that finding files by name,"use cli
+name ""find""
+desc ""find files by name""
+flag hidden -h ""include hidden files""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",I'd like a terminal utility called ping that can check host availability,"use cli
+name ""ping""
+desc ""check host availability""
+flag count -c ""ping count""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Full CRUD for posts on 5000, fields are author and content+","use web
+listen 5000
+crud post author content+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web 8080 a /version page with ""v1.0"", /status that shows ""all systems go"", a / page with ""server is running"", /health returning ""healthy"" please","use web
+listen 8080
+/version ""v1.0""
+/status ""all systems go""
+/ ""server is running""
+/health ""healthy"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",write a command-line application named grep whose purpose is to search files for patterns please,"use cli
+name ""grep""
+desc ""search files for patterns""
+flag verbose -v ""enable verbose output""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","spin up an HTTP server on port 4000 with ""server is running"" at /, /version saying ""v0.1"", /health that shows ""healthy"" and a /hello page with ""hello!""","use web
+listen 4000
+/ ""server is running""
+/version ""v0.1""
+/health ""healthy""
+/hello ""hello!"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","http 80: /api saying ""rest endpoint""","use web
+listen 80
+/api ""rest endpoint"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",simple post app at port 3000 with title and body+ fields,"use web
+listen 3000
+crud post title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, backend for notes on 8000 with title, content","use rest
+listen 8000
+model note title content
+GET /notes list note
+POST /notes create note
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","quickly CRUD API on port 3000: item with name, desc, price","use rest
+listen 3000
+model item name desc price
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make me a hash utility that computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag md5 -m ""use md5""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please build me a bookmark CRUD on port 9090 (name/link),"use web
+listen 9090
+crud bookmark name link"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","make a web server on port 8080 with /status returning ""all systems go""; ""hi!"" at /hello; /health that shows ""healthy""","use web
+listen 8080
+/status ""all systems go""
+/hello ""hi!""
+/health ""healthy"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",I need a entry tracker on port 3000 with title and body+,"use web
+listen 3000
+crud entry title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",develop a head utility for showing first lines,"use cli
+name ""head""
+desc ""show first lines""
+arg count ""number of lines""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","server 3000 with /hello saying ""hello!"", ""up"" at /status, ""ok"" at /health, /version saying ""1.0.0""","use web
+listen 3000
+/hello ""hello!""
+/status ""up""
+/health ""ok""
+/version ""1.0.0"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","deploy a web server on port 8888 that handles requests for /about that shows ""about page"", / saying ""main page"", /hello saying ""hi!"", /status returning ""healthy""","use web
+listen 8888
+/about ""about page""
+/ ""main page""
+/hello ""hi!""
+/status ""healthy"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",console app called ping for checking host availability,"use cli
+name ""ping""
+desc ""check host availability""
+flag verbose -v ""show details""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",CLI tool: cat - concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a unix-style tool called cat to concatenate files please,"use cli
+name ""cat""
+desc ""concatenate files""
+flag number -n ""number lines""
+flag blank -b ""skip blank lines""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I'd like a JSON REST API running on port 8000 for CRUD operations on notes with title, content","use rest
+listen 8000
+model note title content
+GET /notes list note
+POST /notes create note
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",cat tool: concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","Make a web server on port 443 with /hello saying ""hello world"", a /about page with ""about us""","use web
+listen 443
+/hello ""hello world""
+/about ""about us"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",can you create a sort command for sorting lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, expose an endpoint on port 9090 with /version saying ""v0.1"", /status saying ""running"", plus a /about page with ""about us""","use web
+listen 9090
+/version ""v0.1""
+/status ""running""
+/about ""about us"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",create a command-line tool named hash for computing file hash,"use cli
+name ""hash""
+desc ""compute file hash""
+flag sha256 -s ""use sha256""
+flag md5 -m ""use md5""
+arg file ""file to hash"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a REST service at 9090 for events: name, date, location","use rest
+listen 9090
+model event name date location
+GET /events list event
+POST /events create event"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please JSON API on 3000 for posts (title, body, author) and todos (title, done)","use rest
+listen 3000
+model post title body author
+model todo title done
+GET /posts list post
+POST /posts create post
+GET /todos list todo
+POST /todos create todo"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","JSON API for managing tasks on port 9090, fields: title, status, priority","use rest
+listen 9090
+model task title status priority
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",please make me a cat utility that concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","please build an API on port 9090 for tasks (title, status, priority)","use rest
+listen 9090
+model task title status priority
+GET /tasks list task
+POST /tasks create task"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build an API on port 8888 managing messages and items,"use rest
+listen 8888
+model message from to body
+model item name desc price
+GET /messages list message
+POST /messages create message
+GET /items list item
+POST /items create item"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",make a CLI tool called wc that count words in files,"use cli
+name ""wc""
+desc ""count words in files""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on port 9000 with pages: /health returning ""up"", ""welcome!"" at / and a /hello page with ""hey there""","use web
+listen 9000
+/health ""up""
+/ ""welcome!""
+/hello ""hey there"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",build an api on port 9999 managing bookmarks and tasks,"use rest
+listen 9999
+model bookmark title url
+model task title status priority
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /tasks list task
+POST /tasks create task
+GET /health ""ok"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",I need a terminal tool called ping to check host availability,"use cli
+name ""ping""
+desc ""check host availability""
+arg host ""hostname or IP"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","REST API on port 8080 with bookmarks (title, url) and posts (title, body, author)","use rest
+listen 8080
+model bookmark title url
+model post title body author
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark
+GET /posts list post
+POST /posts create post"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",program grep that searching files for patterns from the terminal,"use cli
+name ""grep""
+desc ""search files for patterns""
+flag verbose -v ""enable verbose output""
+flag count -c ""show count only""
+arg pattern ""regex pattern""
+arg file ""file to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","make a REST API for bookmarks on port 4000 with fields title, url","use rest
+listen 4000
+model bookmark title url
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 80 with /about showing ""built with el-stupido""; /hello showing ""hello world"" and a post CRUD with author and content+","use web
+listen 80
+/about ""built with el-stupido""
+/hello ""hello world""
+crud post author content+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",write a command-line application named calc whose purpose is to simple calculator,"use cli
+name ""calc""
+desc ""simple calculator""
+flag verbose -v ""show steps""
+arg expr ""math expression"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","set up a lightweight HTTP server bound to port 5000 with the following pages: a /version page with ""v1.0"", a / page with ""hi there""","use web
+listen 5000
+/version ""v1.0""
+/ ""hi there"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",cli cat for concatenate files,"use cli
+name ""cat""
+desc ""concatenate files""
+flag blank -b ""skip blank lines""
+arg file ""file to read"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",CLI tool: find - find files by name,"use cli
+name ""find""
+desc ""find files by name""
+arg pattern ""file pattern""
+arg dir ""directory to search"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",CRUD for post on port 9000: title and body+,"use web
+listen 9000
+crud post title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","http server on 80 with pages /api showing ""json api"" and /status showing ""alive"" and crud for todos (task and status)","use web
+listen 80
+/api ""json api""
+/status ""alive""
+crud todo task status"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",backend on port 5000 for comments and bookmarks with their fields,"use rest
+listen 5000
+model comment user text
+model bookmark title url
+GET /comments list comment
+POST /comments create comment
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","JSON API on 3000 for notes (title, content) and bookmarks (title, url) please","use rest
+listen 3000
+model note title content
+model bookmark title url
+GET /notes list note
+POST /notes create note
+GET /bookmarks list bookmark
+POST /bookmarks create bookmark"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","i'd like a json rest api running on port 80 for crud operations on messages with from, to, body","use rest
+listen 80
+model message from to body
+GET /messages list message
+POST /messages create message"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want to manage entrys with title and body+ fields, serve on 9000","use web
+listen 9000
+crud entry title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly CRUD for entry on port 8888: title and body+,"use web
+listen 8888
+crud entry title body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","HTTP server on port 8888 with pages: a /api page with ""api v1"" and ""up"" at /health","use web
+listen 8888
+/api ""api v1""
+/health ""up"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",Set up a comment form on port 8000 that saves author and body+,"use web
+listen 8000
+crud comment author body+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 8888 with /status showing ""running"" and a item crud with title and desc","use web
+listen 8888
+/status ""running""
+crud item title desc"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly sort command that sorting lines of text,"use cli
+name ""sort""
+desc ""sort lines of text""
+arg file ""input file"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",quickly build an API on port 80 managing users and users_alts,"use rest
+listen 80
+model user name email
+model users_alt username email role
+GET /users list user
+POST /users create user
+GET /users_alts list users_alt
+POST /users_alts create users_alt"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","hey, I want to manage entrys with key, value fields, serve on 443","use web
+listen 443
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.",command-line serve tool for serving static files,"use cli
+name ""serve""
+desc ""serve static files""
+flag verbose -v ""enable logging""
+arg port ""port number""
+arg dir ""directory to serve"""
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","web server on port 9000 with /about showing ""el-stupido web server"" and a message crud with from and text+","use web
+listen 9000
+/about ""el-stupido web server""
+crud message from text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","build a entry manager on port 9999, fields: key, value","use web
+listen 9999
+crud entry key value"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","generate a link database app at port 9090 storing title, url","use web
+listen 9090
+crud link title url"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","simple message app at port 3000 with from, text+ fields","use web
+listen 3000
+crud message from text+"
+"Convert the request into el-stupido codebook syntax. Output ONLY the codebook code, nothing else.","I want to manage items with title/desc fields, serve on 9000","use web
+listen 9000
+crud item title desc"

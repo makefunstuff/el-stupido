@@ -1,10 +1,13 @@
 esc
 *.o
+*.d
 *.out
+*.wasm
 a.out
 linked_list
 primes
 src/*.o
+src/*.d
 grugbook
 grugmem
 grugweb
@@ -12,3 +15,10 @@ gruweb
 macros
 guestbook.grug
 snake_server
+invaders_server
+hello
+server
+models/
+__pycache__/
+*.grug
+!lib/*.es

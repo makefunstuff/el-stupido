@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "el-stupido decision manifest",
+  "description": "Minimal structured decisions that deterministically expand into complete programs",
+  "type": "object",
+  "required": ["domain", "app"],
+  "properties": {
+    "domain": {
+      "type": "string",
+      "enum": ["crud", "rest", "cli", "test"]
+    },
+    "app": {
+      "type": "object",
+      "required": ["name", "port"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "fields"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                "type": {
+                  "type": "string",
+                  "enum": ["string", "int", "bool", "text"]
+                },
+                "required": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method", "path", "action"],
+        "properties": {
+          "method": { "type": "string", "enum": ["GET", "POST", "DELETE"] },
+          "path": { "type": "string", "pattern": "^/" },
+          "action": {
+            "type": "string",
+            "enum": ["list", "create", "delete", "static", "health"]
+          },
+          "model": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "short", "help"],
+        "properties": {
+          "name": { "type": "string" },
+          "short": { "type": "string", "pattern": "^-[a-zA-Z]$" },
+          "help": { "type": "string" }
+        }
+      }
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "help"],
+        "properties": {
+          "name": { "type": "string" },
+          "help": { "type": "string" }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "assertions"],
+        "properties": {
+          "name": { "type": "string" },
+          "assertions": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
