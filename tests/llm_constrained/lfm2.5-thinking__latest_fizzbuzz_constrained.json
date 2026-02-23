@@ -1,0 +1,20 @@
+{
+  "functions": [
+    {
+      "name": "fizzbuzz",
+      "params": "i",
+      "body": "if (i % 15 == 0) printf('FizzBuzz\n'); else if (i % 3 == 0) printf("
+    },
+    {
+      "name": "Fizz",
+      "params": "Buzz",
+      "body": "Number"
+    },
+    {
+      "name": "Fizz",
+      "params": "i",
+      "body": "Fizz"
+    }
+  ],
+  "main_body": "for (i = 1; i <= 30; i++) { printf(funcfungsions[0].body, i); }"
+}

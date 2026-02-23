@@ -1,0 +1,25 @@
+{
+  "functions": [
+    {
+      "name": "product",
+      "params": "n",
+      "body": "1*2*...*n"
+    },
+    {
+      "name": "sum",
+      "params": "n",
+      "body": "1+2+...+n"
+    },
+    {
+      "name": "print",
+      "params": "expr",
+      "body": "print(expr)"
+    },
+    {
+      "name": "for",
+      "params": "i := 1..=n",
+      "body": "for i := 1..=n { body }"
+    }
+  ],
+  "main_body": "for i := 1..=12 { print(fact(i)) }"
+}

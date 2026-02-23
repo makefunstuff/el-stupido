@@ -1,16 +1,38 @@
 /*  Codebook expander — text-level pass between preprocess() and parser.
  *
- *  Directives (after 📥 web activates web codebook):
- *    🌐 PORT                              — listen on port
- *    📍 PATH 📄 "text"                    — static html
- *    📍 PATH 📊 func                      — call func(fd,req)
- *    📍 PATH 📁 "file" "ctype"            — serve file
- *    📍 PATH 🎨 "tpl.grug"               — serve .grug template (static)
- *    📍 PATH 🎨 "tpl.grug" "data.grug"   — serve template + iterate data
- *    📍 PATH { body }                     — inline handler (fd/req in scope)
- *    📍 POST PATH 💾 "store.grug" "f1,f2" /redir — save form, redirect
- *    📡 PATH 🔁                           — websocket echo
- *    📡 PATH { body }                     — websocket handler (fd/msg in scope)
+ *  Codebooks:
+ *    use web  — HTTP/WebSocket server DSL
+ *    use cli  — CLI argument parser generator
+ *    use rest — JSON REST API generator
+ *    use test — test runner framework
+ *
+ *  Web directives (after use web):
+ *    listen PORT                           — listen on port
+ *    /PATH "text"                          — static html
+ *    /PATH fn handler                      — call handler(fd,req)
+ *    /PATH file "file" "ctype"             — serve file
+ *    /PATH tpl "tpl.grug"                  — serve .grug template
+ *    /PATH { body }                        — inline handler (fd/req in scope)
+ *    POST /PATH save "store.grug" "f1,f2" /redir — save form
+ *    ws /PATH echo                         — websocket echo
+ *    ws /PATH { body }                     — websocket handler
+ *    crud NAME field1 field2+              — full CRUD app
+ *
+ *  CLI directives (after use cli):
+ *    name "APPNAME"                        — app name for help text
+ *    desc "DESCRIPTION"                    — description for help text
+ *    flag NAME -X "help"                   — boolean flag (--NAME/-X)
+ *    arg NAME "help"                       — positional argument
+ *
+ *  REST directives (after use rest):
+ *    listen PORT                           — listen on port
+ *    model NAME field1 field2 ...          — define a data model
+ *    GET /PATH list MODEL                  — list all MODEL entries as JSON
+ *    POST /PATH create MODEL               — create MODEL from JSON body
+ *    GET /PATH "text"                      — static JSON response
+ *
+ *  Test directives (after use test):
+ *    test "NAME" { assert EXPR }           — test case with assertions
  */
 
 #include "es.h"
@@ -68,6 +90,50 @@ typedef struct {
     Route routes[CB_MAX_ROUTES];
     struct { char path[128]; int is_echo; char body[4096]; } ws[8];
 } WebCB;
+
+/* ---- CLI codebook state ---- */
+#define CLI_MAX_FLAGS 16
+#define CLI_MAX_ARGS  16
+
+typedef struct {
+    int active, flag_count, arg_count;
+    char app_name[128];
+    char app_desc[256];
+    struct { char name[64]; char shortf[4]; char help[128]; } flags[CLI_MAX_FLAGS];
+    struct { char name[64]; char help[128]; } args[CLI_MAX_ARGS];
+} CliCB;
+
+/* ---- REST codebook state ---- */
+#define REST_MAX_MODELS 8
+#define REST_MAX_ROUTES 32
+#define REST_MAX_FIELDS 16
+
+typedef enum { REST_LIST, REST_CREATE, REST_STATIC } RestRouteKind;
+typedef enum { REST_GET, REST_POST } RestMethod;
+
+typedef struct {
+    int active, port, model_count, route_count;
+    struct {
+        char name[64];
+        char fields[REST_MAX_FIELDS][64];
+        int field_count;
+    } models[REST_MAX_MODELS];
+    struct {
+        RestRouteKind kind;
+        RestMethod method;
+        char path[128];
+        char model[64];     /* for list/create */
+        char content[256];  /* for static */
+    } routes[REST_MAX_ROUTES];
+} RestCB;
+
+/* ---- Test codebook state ---- */
+#define TEST_MAX_CASES 64
+
+typedef struct {
+    int active, count;
+    struct { char name[128]; char body[4096]; } cases[TEST_MAX_CASES];
+} TestCB;
 
 /* ---- line/string utilities ---- */
 static const char *cb_skip_ws(const char *p) { while (*p==' '||*p=='\t') p++; return p; }
@@ -325,111 +391,692 @@ static const char *parse_route_type(const char *a, Route *r, int *needs_grug, CB
     return a;
 }
 
+/* ---- CLI codebook: generate expanded source ---- */
+static void gen_cli(CliCB *cli, CBuf *passthru, CBuf *out) {
+    /* Cli struct with all flags/args as fields */
+    cb_bw(out, "struct Cli {\n");
+    for (int i = 0; i < cli->flag_count; i++)
+        cb_bfmt(out, "  %s: i32\n", cli->flags[i].name);
+    for (int i = 0; i < cli->arg_count; i++)
+        cb_bfmt(out, "  %s: *u8\n", cli->args[i].name);
+    cb_bw(out, "}\n\n");
+
+    /* passthrough (user code — contains cli_main(cli: *Cli) etc.) */
+    if (passthru->n > 0) { cb_bc(passthru, '\0'); cb_bw(out, passthru->d); cb_bw(out, "\n"); }
+
+    /* cli_help() */
+    cb_bw(out, "fn __cli_help() {\n");
+    if (cli->app_desc[0])
+        cb_bfmt(out, "  printf(\"%s — %s\\n\\n\")\n", cli->app_name, cli->app_desc);
+    else
+        cb_bfmt(out, "  printf(\"%s\\n\\n\")\n", cli->app_name);
+
+    /* usage line */
+    cb_bfmt(out, "  printf(\"usage: %s", cli->app_name);
+    if (cli->flag_count) cb_bw(out, " [flags]");
+    for (int i = 0; i < cli->arg_count; i++)
+        cb_bfmt(out, " <%s>", cli->args[i].name);
+    cb_bw(out, "\\n\\n\")\n");
+
+    /* flags help */
+    if (cli->flag_count || 1) {
+        cb_bw(out, "  printf(\"flags:\\n\")\n");
+        for (int i = 0; i < cli->flag_count; i++)
+            cb_bfmt(out, "  printf(\"  %s, --%-12s %s\\n\")\n",
+                    cli->flags[i].shortf, cli->flags[i].name, cli->flags[i].help);
+        cb_bw(out, "  printf(\"  -h, --help          show this help\\n\")\n");
+    }
+
+    /* args help */
+    if (cli->arg_count) {
+        cb_bw(out, "  printf(\"\\nargs:\\n\")\n");
+        for (int i = 0; i < cli->arg_count; i++)
+            cb_bfmt(out, "  printf(\"  %-18s %s\\n\")\n", cli->args[i].name, cli->args[i].help);
+    }
+    cb_bw(out, "}\n\n");
+
+    /* main(argc, argv) */
+    cb_bw(out, "fn main(argc: i32, argv: **u8) -> i32 {\n"
+               "  cli := nw Cli\n");
+    /* zero out flags */
+    for (int i = 0; i < cli->flag_count; i++)
+        cb_bfmt(out, "  cli.%s = 0\n", cli->flags[i].name);
+    for (int i = 0; i < cli->arg_count; i++)
+        cb_bfmt(out, "  cli.%s = null as *u8\n", cli->args[i].name);
+    cb_bw(out, "  __pi := 0\n"
+               "  for __i := 1..argc {\n"
+               "    __a := *(argv + __i)\n");
+
+    /* flag checks */
+    for (int i = 0; i < cli->flag_count; i++) {
+        cb_bfmt(out, "    %s strcmp(__a, \"%s\") == 0 || strcmp(__a, \"--%s\") == 0 { cli.%s = 1 }\n",
+                i == 0 ? "if" : "el if", cli->flags[i].shortf, cli->flags[i].name, cli->flags[i].name);
+    }
+
+    /* help check */
+    cb_bfmt(out, "    %s strcmp(__a, \"-h\") == 0 || strcmp(__a, \"--help\") == 0 { __cli_help(); exit(0) }\n",
+            cli->flag_count ? "el if" : "if");
+
+    /* unknown flag check */
+    cb_bw(out, "    el if *(__a) == 45 { printf(\"unknown flag: %s\\n\", __a); __cli_help(); exit(1) }\n");
+
+    /* positional args */
+    cb_bw(out, "    el {\n");
+    for (int i = 0; i < cli->arg_count; i++) {
+        cb_bfmt(out, "      %s __pi == %d { cli.%s = __a }\n",
+                i == 0 ? "if" : "el if", i, cli->args[i].name);
+    }
+    cb_bw(out, "      __pi += 1\n"
+               "    }\n"
+               "  }\n");
+
+    /* required arg checks */
+    for (int i = 0; i < cli->arg_count; i++) {
+        cb_bfmt(out, "  if cli.%s as i64 == 0 { printf(\"error: missing <%s>\\n\"); __cli_help(); exit(1) }\n",
+                cli->args[i].name, cli->args[i].name);
+    }
+
+    cb_bw(out, "  cli_main(cli)\n"
+               "  free(cli as *void)\n"
+               "  ret 0\n"
+               "}\n");
+}
+
+/* ---- REST codebook: find model by name ---- */
+static int rest_find_model(RestCB *r, const char *name) {
+    for (int i = 0; i < r->model_count; i++)
+        if (strcmp(r->models[i].name, name) == 0) return i;
+    return -1;
+}
+
+/* ---- REST codebook: generate expanded source ---- */
+static void gen_rest(RestCB *rest, CBuf *passthru, CBuf *out) {
+    cb_bw(out, "\nuse http\nuse grug\nuse str\n\n");
+
+    /* passthrough (user code) */
+    if (passthru->n > 0) { cb_bc(passthru, '\0'); cb_bw(out, passthru->d); cb_bw(out, "\n"); }
+
+    /* JSON string escape helper */
+    cb_bw(out,
+        "fn __jesc(s: *Str, v: *u8) {\n"
+        "  i := 0\n"
+        "  wh *(v+i) != 0 {\n"
+        "    c := *(v+i) as i32\n"
+        "    if c == 34 { str_add(s, \"\\\\\\\"\" as *u8) }\n"
+        "    el if c == 92 { str_add(s, \"\\\\\\\\\" as *u8) }\n"
+        "    el if c == 10 { str_add(s, \"\\\\n\" as *u8) }\n"
+        "    el { str_addc(s, c) }\n"
+        "    i += 1\n"
+        "  }\n"
+        "}\n\n");
+
+    /* JSON field finder: extracts "key":"value" from JSON body */
+    cb_bw(out,
+        "fn __jfind(body: *u8, key: *u8, dst: *u8, dsz: i32) {\n"
+        "  *dst = 0\n"
+        "  kl := strlen(key) as i32\n"
+        "  p := body\n"
+        "  wh *p != 0 {\n"
+        "    if *p == 34 {\n"
+        "      p = p + 1\n"
+        "      if strncmp(p, key, kl as u64) == 0 && *(p+kl) == 34 {\n"
+        "        p = p + kl + 1\n"
+        "        wh *p == 32 || *p == 58 { p = p + 1 }\n"
+        "        if *p == 34 {\n"
+        "          p = p + 1; o := 0\n"
+        "          wh *p != 0 && *p != 34 && o < dsz - 1 {\n"
+        "            if *p == 92 && *(p+1) != 0 { p = p + 1 }\n"
+        "            *(dst+o) = *p; o += 1; p = p + 1\n"
+        "          }\n"
+        "          *(dst+o) = 0; ret\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "    p = p + 1\n"
+        "  }\n"
+        "}\n\n");
+
+    /* strdup helper */
+    cb_bw(out,
+        "fn __jsd(s: *u8) -> *u8 {\n"
+        "  l := strlen(s) as i32\n"
+        "  d := malloc((l + 1) as u64) as *u8\n"
+        "  memcpy(d as *void, s as *void, (l + 1) as u64)\n"
+        "  ret d\n"
+        "}\n\n");
+
+    /* list handler for each model */
+    for (int ri = 0; ri < rest->route_count; ri++) {
+        if (rest->routes[ri].kind != REST_LIST) continue;
+        int mi = rest_find_model(rest, rest->routes[ri].model);
+        if (mi < 0) { fprintf(stderr, "codebook: unknown model '%s'\n", rest->routes[ri].model); exit(1); }
+
+        char fn_name[128];
+        snprintf(fn_name, sizeof(fn_name), "__rest_list_%s", rest->routes[ri].model);
+        cb_bfmt(out, "fn %s(fd: i32, req: *u8) {\n", fn_name);
+        cb_bw(out,   "  http_resp(fd, 200, \"application/json\")\n"
+                     "  s := str_new()\n"
+                     "  str_add(s, \"[\")\n");
+        cb_bfmt(out, "  __g := grug_parse(\"%s.grug\")\n", rest->routes[ri].model);
+        cb_bw(out,   "  if __g as i64 != 0 {\n"
+                     "    __s := __g.sec\n"
+                     "    __fi := 0\n"
+                     "    wh __s as i64 != 0 {\n"
+                     "      if __fi > 0 { str_add(s, \",\") }\n"
+                     "      str_add(s, \"{\")\n");
+
+        for (int f = 0; f < rest->models[mi].field_count; f++) {
+            cb_bfmt(out, "      __fv%d := fval(__s, \"%s\")\n", f, rest->models[mi].fields[f]);
+            cb_bfmt(out, "      str_add(s, \"\\\"%s\\\":\")\n", rest->models[mi].fields[f]);
+            cb_bfmt(out, "      if __fv%d as i64 != 0 { str_add(s, \"\\\"\"); __jesc(s, __fv%d); str_add(s, \"\\\"\") }\n", f, f);
+            cb_bfmt(out, "      el { str_add(s, \"null\") }\n");
+            if (f < rest->models[mi].field_count - 1)
+                cb_bw(out, "      str_add(s, \",\")\n");
+        }
+
+        cb_bw(out,   "      str_add(s, \"}\")\n"
+                     "      __fi += 1\n"
+                     "      __s = __s.nx\n"
+                     "    }\n"
+                     "    grug_fr(__g)\n"
+                     "  }\n"
+                     "  str_add(s, \"]\")\n"
+                     "  http_send(fd, str_get(s))\n"
+                     "  str_fr(s)\n"
+                     "}\n\n");
+    }
+
+    /* create handler for each model */
+    for (int ri = 0; ri < rest->route_count; ri++) {
+        if (rest->routes[ri].kind != REST_CREATE) continue;
+        int mi = rest_find_model(rest, rest->routes[ri].model);
+        if (mi < 0) { fprintf(stderr, "codebook: unknown model '%s'\n", rest->routes[ri].model); exit(1); }
+
+        char fn_name[128];
+        snprintf(fn_name, sizeof(fn_name), "__rest_create_%s", rest->routes[ri].model);
+        cb_bfmt(out, "fn %s(fd: i32, req: *u8) {\n", fn_name);
+        cb_bw(out,   "  body := http_body(req)\n"
+                     "  if body as i64 == 0 { http_resp(fd, 400, \"application/json\"); http_send(fd, \"{\\\"error\\\":\\\"no body\\\"}\"); ret }\n");
+
+        /* extract each field from JSON */
+        for (int f = 0; f < rest->models[mi].field_count; f++)
+            cb_bfmt(out, "  __v%d:[512]u8; __jfind(body, \"%s\", &__v%d, 512)\n", f, rest->models[mi].fields[f], f);
+
+        /* store to grug */
+        cb_bfmt(out, "  __sg := grug_parse(\"%s.grug\")\n", rest->routes[ri].model);
+        cb_bw(out,   "  if __sg as i64 == 0 { __sg = nw Grug; __sg.sec = null as *Sec; __sg.buf = null as *u8 }\n"
+                     "  __sid:[40]u8; sprintf(&__sid, \"e_%d\", getpid())\n"
+                     "  __sp := &__sid as *u8\n");
+        for (int f = 0; f < rest->models[mi].field_count; f++)
+            cb_bfmt(out, "  grug_set(__sg, __sp, \"%s\", &__v%d)\n", rest->models[mi].fields[f], f);
+        cb_bfmt(out, "  grug_write(__sg, \"%s.grug\"); grug_fr(__sg)\n", rest->routes[ri].model);
+
+        cb_bw(out,   "  http_resp(fd, 201, \"application/json\")\n"
+                     "  http_send(fd, \"{\\\"ok\\\":true}\")\n"
+                     "}\n\n");
+    }
+
+    /* serve function */
+    cb_bw(out, "fn __cb_serve(fd: i32) {\n"
+               "  buf:[8192]u8; n := read(fd, &buf, 8191) as i32\n"
+               "  if n <= 0 { close(fd); ret }\n"
+               "  *((&buf) as *u8 + n) = 0; req := &buf as *u8\n"
+               "  path:[256]u8; http_path(req, &path, 256)\n");
+
+    /* route dispatch */
+    int first = 1;
+    for (int ri = 0; ri < rest->route_count; ri++) {
+        const char *mcheck;
+        if (rest->routes[ri].method == REST_POST)
+            mcheck = "http_ispost(req) != 0 && ";
+        else
+            mcheck = "http_isget(req) != 0 && ";
+
+        cb_bfmt(out, "  %s %sstrcmp(&path, \"%s\") == 0 {\n",
+                first ? "if" : "el if", mcheck, rest->routes[ri].path);
+        first = 0;
+
+        switch (rest->routes[ri].kind) {
+        case REST_LIST:
+            cb_bfmt(out, "    __rest_list_%s(fd, req)\n", rest->routes[ri].model);
+            break;
+        case REST_CREATE:
+            cb_bfmt(out, "    __rest_create_%s(fd, req)\n", rest->routes[ri].model);
+            break;
+        case REST_STATIC:
+            cb_bw(out,  "    http_resp(fd, 200, \"application/json\")\n");
+            cb_bfmt(out, "    http_send(fd, \"%s\")\n", rest->routes[ri].content);
+            break;
+        }
+        cb_bw(out, "  }\n");
+    }
+
+    /* 404 */
+    if (rest->route_count > 0)
+        cb_bw(out, "  el { http_resp(fd, 404, \"application/json\"); http_send(fd, \"{\\\"error\\\":\\\"not found\\\"}\") }\n");
+    cb_bw(out, "  close(fd)\n}\n\n");
+
+    /* main */
+    cb_bw(out, "ext signal(i32, *void) -> *void\nfn main() {\n"
+               "  signal(17, 1 as *void)\n");
+    cb_bfmt(out, "  sfd := http_listen(%d)\n", rest->port);
+    cb_bw(out,   "  if sfd < 0 { printf(\"listen failed\\n\"); ret 1 }\n");
+    cb_bfmt(out, "  printf(\":%d\\n\")\n", rest->port);
+    cb_bw(out,   "  wh 1 { cfd := accept(sfd, null, null); if cfd < 0 { ret 1 }\n"
+                 "    pid := fork(); if pid == 0 { close(sfd); __cb_serve(cfd); exit(0) }; close(cfd) }\n}\n");
+}
+
+/* ---- Test codebook: generate expanded source ---- */
+static void gen_test(TestCB *test, CBuf *passthru, CBuf *out) {
+    /* passthrough (user code — functions under test) */
+    if (passthru->n > 0) { cb_bc(passthru, '\0'); cb_bw(out, passthru->d); cb_bw(out, "\n"); }
+
+    /* generate test functions: each assert becomes if/el check */
+    for (int i = 0; i < test->count; i++) {
+        cb_bfmt(out, "fn __test_%d() -> i32 {\n", i);
+
+        /* parse body for assert statements */
+        const char *bp = test->cases[i].body;
+        while (*bp) {
+            bp = cb_skip_ws(bp);
+            if (*bp == '\n') { bp++; continue; }
+            if (*bp == '\0') break;
+
+            int acl = cb_kw(bp, "assert");
+            if (acl) {
+                const char *expr_start = cb_skip_ws(bp + acl);
+                /* find end of expression: newline, semicolon, or } */
+                const char *expr_end = expr_start;
+                int depth = 0;
+                while (*expr_end && *expr_end != '\n' && *expr_end != ';') {
+                    if (*expr_end == '(') depth++;
+                    else if (*expr_end == ')') { if (depth > 0) depth--; }
+                    else if (*expr_end == '}' && depth == 0) break;
+                    expr_end++;
+                }
+                /* trim trailing whitespace */
+                while (expr_end > expr_start && (*(expr_end-1) == ' ' || *(expr_end-1) == '\t'))
+                    expr_end--;
+
+                int elen = (int)(expr_end - expr_start);
+                char expr_text[2048];
+                if (elen > (int)sizeof(expr_text) - 1) elen = (int)sizeof(expr_text) - 1;
+                memcpy(expr_text, expr_start, elen);
+                expr_text[elen] = '\0';
+
+                /* escape the expression for printf string */
+                char expr_esc[2048];
+                int ei = 0;
+                for (int j = 0; expr_text[j] && ei < (int)sizeof(expr_esc) - 2; j++) {
+                    if (expr_text[j] == '"') { expr_esc[ei++] = '\\'; expr_esc[ei++] = '"'; }
+                    else if (expr_text[j] == '\\') { expr_esc[ei++] = '\\'; expr_esc[ei++] = '\\'; }
+                    else if (expr_text[j] == '%') { expr_esc[ei++] = '%'; expr_esc[ei++] = '%'; }
+                    else expr_esc[ei++] = expr_text[j];
+                }
+                expr_esc[ei] = '\0';
+
+                cb_bfmt(out, "  if %s { }\n", expr_text);
+                cb_bfmt(out, "  el { printf(\"    FAIL: assert %s\\n\"); ret 1 }\n", expr_esc);
+
+                bp = expr_end;
+                if (*bp == ';') bp++;
+                if (*bp == '\n') bp++;
+            } else {
+                /* skip non-assert line */
+                while (*bp && *bp != '\n') bp++;
+                if (*bp == '\n') bp++;
+            }
+        }
+        cb_bw(out, "  ret 0\n}\n\n");
+    }
+
+    /* main: run all tests */
+    cb_bw(out, "fn main() -> i32 {\n"
+               "  __pass := 0\n"
+               "  __fail := 0\n");
+    cb_bfmt(out, "  __total := %d\n", test->count);
+    cb_bw(out, "  printf(\"running %d tests...\\n\\n\", __total)\n");
+
+    for (int i = 0; i < test->count; i++) {
+        /* escape test name for printf */
+        char name_esc[256];
+        int ni = 0;
+        for (int j = 0; test->cases[i].name[j] && ni < (int)sizeof(name_esc) - 2; j++) {
+            if (test->cases[i].name[j] == '"') { name_esc[ni++] = '\\'; name_esc[ni++] = '"'; }
+            else if (test->cases[i].name[j] == '\\') { name_esc[ni++] = '\\'; name_esc[ni++] = '\\'; }
+            else if (test->cases[i].name[j] == '%') { name_esc[ni++] = '%'; name_esc[ni++] = '%'; }
+            else name_esc[ni++] = test->cases[i].name[j];
+        }
+        name_esc[ni] = '\0';
+
+        cb_bfmt(out, "  printf(\"  %s ... \")\n", name_esc);
+        cb_bfmt(out, "  if __test_%d() == 0 { printf(\"\\x1b[32mPASS\\x1b[0m\\n\"); __pass += 1 }\n", i);
+        cb_bw(out,   "  el { printf(\"\\x1b[31mFAIL\\x1b[0m\\n\"); __fail += 1 }\n");
+    }
+
+    cb_bw(out, "  printf(\"\\n%d/%d passed\\n\", __pass, __total)\n"
+               "  if __fail > 0 { ret 1 }\n"
+               "  ret 0\n"
+               "}\n");
+}
+
+/* ---- helper: check if identifier matches at position (word boundary) ---- */
+static int cb_match_ident(const char *p, const char *id) {
+    int n = (int)strlen(id);
+    if (strncmp(p, id, n) != 0) return 0;
+    char c = p[n];
+    if (c && c != '\0' && c != '\n' && c != ' ' && c != '\t' && c != '\r' && c != ';') return 0;
+    return n;
+}
+
 /* ---- main codebook expansion ---- */
 char *codebook_expand(const char *src) {
     WebCB web = {0};
+    CliCB cli = {0};
+    RestCB rest = {0};
+    TestCB tst = {0};
     CBuf passthru = {0};
 
     const char *p = src;
     int found_codebook = 0;
+    /* which codebook is active: 0=none, 1=web, 2=cli, 3=rest, 4=test */
+    int active_cb = 0;
 
     while (*p) {
         const char *q = cb_skip_ws(p);
 
-        /* 📥 web  OR  use web */
+        /* skip empty lines and comments */
+        if (*q == '\n') { if (!active_cb) cb_bc(&passthru, '\n'); p = q + 1; continue; }
+        if (*q == '\0') break;
+
+        /* detect codebook activation: 📥 NAME  OR  use NAME */
         int cl = cb_cem(q, CP_USE);
         if (!cl) cl = cb_kw(q, "use");
-        if (cl) {
-            const char *after = cb_skip_ws(q+cl);
-            if (strncmp(after,"web",3)==0 && (after[3]=='\0'||after[3]=='\n'||after[3]==' '||after[3]=='\t'||after[3]=='\r'||after[3]==';')) {
-                web.active=1; found_codebook=1;
-                p=cb_line_end(after+3); if (*p=='\n') p++; continue;
+        if (cl && !active_cb) {
+            const char *after = cb_skip_ws(q + cl);
+            if (cb_match_ident(after, "web")) {
+                web.active = 1; found_codebook = 1; active_cb = 1;
+                p = cb_line_end(after + 3); if (*p == '\n') p++; continue;
+            }
+            if (cb_match_ident(after, "cli")) {
+                cli.active = 1; found_codebook = 1; active_cb = 2;
+                p = cb_line_end(after + 3); if (*p == '\n') p++; continue;
+            }
+            if (cb_match_ident(after, "rest")) {
+                rest.active = 1; found_codebook = 1; active_cb = 3;
+                p = cb_line_end(after + 4); if (*p == '\n') p++; continue;
+            }
+            if (cb_match_ident(after, "test")) {
+                tst.active = 1; found_codebook = 1; active_cb = 4;
+                p = cb_line_end(after + 4); if (*p == '\n') p++; continue;
             }
         }
-        if (!web.active) { while (*p&&*p!='\n') cb_bc(&passthru,*p++); if (*p=='\n'){cb_bc(&passthru,'\n');p++;} continue; }
 
-        /* 🌐 PORT  OR  listen PORT */
-        cl=cb_cem(q,CP_LISTEN);
-        if (!cl) cl=cb_kw(q,"listen");
-        if (cl) { const char *a=cb_skip_ws(q+cl); web.port=atoi(a); if (web.port<=0) web.port=8080; /* atoi ignores trailing ; */ p=cb_line_end(a); if(*p=='\n')p++; continue; }
-
-        /* route: 📍  OR  line starts with /  OR  starts with GET/POST */
-        cl=cb_cem(q,CP_ROUTE);
-        int is_route = cl>0;
-        int is_ascii_route = 0;
-        if (!is_route && (*q=='/' || strncmp(q,"GET ",4)==0 || strncmp(q,"POST ",5)==0)) { is_ascii_route=1; is_route=1; cl=0; }
-        if (is_route) {
-            Route *r=&web.routes[web.route_count]; memset(r,0,sizeof(*r)); r->method=RM_GET;
-            const char *a = is_ascii_route ? q : cb_skip_ws(q+cl);
-            if (strncmp(a,"POST",4)==0&&(a[4]==' '||a[4]=='\t')) { r->method=RM_POST; a=cb_skip_ws(a+4); }
-            else if (strncmp(a,"GET",3)==0&&(a[3]==' '||a[3]=='\t')) { a=cb_skip_ws(a+3); }
-            int pl=cb_read_path(a,r->path,sizeof(r->path)); a=cb_skip_ws(a+pl);
-            a = parse_route_type(a, r, &web.needs_grug, &passthru);
-            web.route_count++;
-            p=cb_line_end(a); while (*p=='\n'||*p=='\r') p++; continue;
+        /* no codebook active — passthrough */
+        if (!active_cb) {
+            while (*p && *p != '\n') cb_bc(&passthru, *p++);
+            if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
+            continue;
         }
 
-        /* websocket: 📡 PATH  OR  ws PATH */
-        cl=cb_cem(q,CP_WS);
-        if (!cl) cl=cb_kw(q,"ws");
-        if (cl) {
-            const char *a=cb_skip_ws(q+cl); int wi=web.ws_count;
-            int pl=cb_read_path(a,web.ws[wi].path,sizeof(web.ws[wi].path)); a=cb_skip_ws(a+pl);
-            int ecl; if ((ecl=cb_cem(a,CP_ECHO))>0) { web.ws[wi].is_echo=1; a+=ecl; }
-            else if ((ecl=cb_kw(a,"echo"))>0) { web.ws[wi].is_echo=1; a+=ecl; }
-            else if (*a=='{') { web.ws[wi].is_echo=0; int bl=cb_read_block(a,web.ws[wi].body,sizeof(web.ws[wi].body)); a+=bl; }
-            web.ws_count++; p=cb_line_end(a); while (*p=='\n'||*p=='\r') p++; continue;
-        }
+        /* ==== WEB codebook directives ==== */
+        if (active_cb == 1) {
+            /* 🌐 PORT  OR  listen PORT */
+            cl = cb_cem(q, CP_LISTEN);
+            if (!cl) cl = cb_kw(q, "listen");
+            if (cl) { const char *a = cb_skip_ws(q + cl); web.port = atoi(a); if (web.port <= 0) web.port = 8080; p = cb_line_end(a); if (*p == '\n') p++; continue; }
 
-        /* crud NAME field1 field2+ ... → pushes GET(RT_CRUD) + POST(RT_SAVE) */
-        cl=cb_kw(q,"crud");
-        if (cl) {
-            const char *a=cb_skip_ws(q+cl);
-            /* read app name */
-            char cname[128]; int nl=cb_read_word(a,cname,sizeof(cname)); a=cb_skip_ws(a+nl);
-            /* read fields (space-sep, + suffix = textarea) */
-            char fraw[512]; int fi=0;     /* raw: "name,msg+" */
-            char fclean[512]; int ci=0;   /* clean: "name,msg" (no +, for RT_SAVE) */
-            int first_f=1;
-            while (*a && *a!='\n' && *a!='\r') {
-                char fw[64]; int wl=0;
-                while (wl<63&&*a&&*a!=' '&&*a!='\t'&&*a!='\n'&&*a!='\r') { fw[wl++]=*a++; }
-                fw[wl]='\0'; a=cb_skip_ws(a);
-                if (!wl) break;
-                if (!first_f) { fraw[fi++]=','; fclean[ci++]=','; }
-                /* copy to fraw as-is (with + marker) */
-                for (int j=0; fw[j]; j++) { if (fi<(int)sizeof(fraw)-1) fraw[fi++]=fw[j]; }
-                /* copy to fclean without + */
-                for (int j=0; fw[j] && fw[j]!='+'; j++) { if (ci<(int)sizeof(fclean)-1) fclean[ci++]=fw[j]; }
-                first_f=0;
+            /* route: 📍  OR  line starts with /  OR  starts with GET/POST */
+            cl = cb_cem(q, CP_ROUTE);
+            int is_route = cl > 0;
+            int is_ascii_route = 0;
+            if (!is_route && (*q == '/' || strncmp(q, "GET ", 4) == 0 || strncmp(q, "POST ", 5) == 0)) { is_ascii_route = 1; is_route = 1; cl = 0; }
+            if (is_route) {
+                Route *r = &web.routes[web.route_count]; memset(r, 0, sizeof(*r)); r->method = RM_GET;
+                const char *a = is_ascii_route ? q : cb_skip_ws(q + cl);
+                if (strncmp(a, "POST", 4) == 0 && (a[4] == ' ' || a[4] == '\t')) { r->method = RM_POST; a = cb_skip_ws(a + 4); }
+                else if (strncmp(a, "GET", 3) == 0 && (a[3] == ' ' || a[3] == '\t')) { a = cb_skip_ws(a + 3); }
+                int pl = cb_read_path(a, r->path, sizeof(r->path)); a = cb_skip_ws(a + pl);
+                a = parse_route_type(a, r, &web.needs_grug, &passthru);
+                web.route_count++;
+                p = cb_line_end(a); while (*p == '\n' || *p == '\r') p++; continue;
             }
-            fraw[fi]='\0'; fclean[ci]='\0';
-            /* build store path */
-            char store[256]; snprintf(store,sizeof(store),"%s.grug",cname);
-            /* push POST / first (needs priority over GET /) */
-            Route *rp=&web.routes[web.route_count]; memset(rp,0,sizeof(*rp));
-            rp->kind=RT_SAVE; rp->method=RM_POST; strcpy(rp->path,"/");
-            strncpy(rp->content,store,sizeof(rp->content)-1);   /* store path */
-            strncpy(rp->fields,fclean,sizeof(rp->fields)-1);    /* clean field names */
-            strcpy(rp->redirect,"/");
-            web.route_count++;
-            /* push GET / → RT_CRUD */
-            Route *rg=&web.routes[web.route_count]; memset(rg,0,sizeof(*rg));
-            rg->kind=RT_CRUD; rg->method=RM_GET; strcpy(rg->path,"/");
-            strncpy(rg->content,cname,sizeof(rg->content)-1);   /* app name */
-            strncpy(rg->fields,fraw,sizeof(rg->fields)-1);      /* fields with + markers */
-            strncpy(rg->data_path,store,sizeof(rg->data_path)-1); /* store file */
-            web.route_count++;
-            web.needs_grug=1;
-            p=cb_line_end(a); while (*p=='\n'||*p=='\r') p++; continue;
+
+            /* websocket: 📡 PATH  OR  ws PATH */
+            cl = cb_cem(q, CP_WS);
+            if (!cl) cl = cb_kw(q, "ws");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl); int wi = web.ws_count;
+                int pl = cb_read_path(a, web.ws[wi].path, sizeof(web.ws[wi].path)); a = cb_skip_ws(a + pl);
+                int ecl; if ((ecl = cb_cem(a, CP_ECHO)) > 0) { web.ws[wi].is_echo = 1; a += ecl; }
+                else if ((ecl = cb_kw(a, "echo")) > 0) { web.ws[wi].is_echo = 1; a += ecl; }
+                else if (*a == '{') { web.ws[wi].is_echo = 0; int bl = cb_read_block(a, web.ws[wi].body, sizeof(web.ws[wi].body)); a += bl; }
+                web.ws_count++; p = cb_line_end(a); while (*p == '\n' || *p == '\r') p++; continue;
+            }
+
+            /* crud NAME field1 field2+ ... */
+            cl = cb_kw(q, "crud");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                char cname[128]; int nl = cb_read_word(a, cname, sizeof(cname)); a = cb_skip_ws(a + nl);
+                char fraw[512]; int fi = 0;
+                char fclean[512]; int ci = 0;
+                int first_f = 1;
+                while (*a && *a != '\n' && *a != '\r') {
+                    char fw[64]; int wl = 0;
+                    while (wl < 63 && *a && *a != ' ' && *a != '\t' && *a != '\n' && *a != '\r') { fw[wl++] = *a++; }
+                    fw[wl] = '\0'; a = cb_skip_ws(a);
+                    if (!wl) break;
+                    if (!first_f) { fraw[fi++] = ','; fclean[ci++] = ','; }
+                    for (int j = 0; fw[j]; j++) { if (fi < (int)sizeof(fraw) - 1) fraw[fi++] = fw[j]; }
+                    for (int j = 0; fw[j] && fw[j] != '+'; j++) { if (ci < (int)sizeof(fclean) - 1) fclean[ci++] = fw[j]; }
+                    first_f = 0;
+                }
+                fraw[fi] = '\0'; fclean[ci] = '\0';
+                char store[256]; snprintf(store, sizeof(store), "%s.grug", cname);
+                Route *rp = &web.routes[web.route_count]; memset(rp, 0, sizeof(*rp));
+                rp->kind = RT_SAVE; rp->method = RM_POST; strcpy(rp->path, "/");
+                strncpy(rp->content, store, sizeof(rp->content) - 1);
+                strncpy(rp->fields, fclean, sizeof(rp->fields) - 1);
+                strcpy(rp->redirect, "/");
+                web.route_count++;
+                Route *rg = &web.routes[web.route_count]; memset(rg, 0, sizeof(*rg));
+                rg->kind = RT_CRUD; rg->method = RM_GET; strcpy(rg->path, "/");
+                strncpy(rg->content, cname, sizeof(rg->content) - 1);
+                strncpy(rg->fields, fraw, sizeof(rg->fields) - 1);
+                strncpy(rg->data_path, store, sizeof(rg->data_path) - 1);
+                web.route_count++;
+                web.needs_grug = 1;
+                p = cb_line_end(a); while (*p == '\n' || *p == '\r') p++; continue;
+            }
+
+            /* passthrough in web mode */
+            while (*p && *p != '\n') cb_bc(&passthru, *p++);
+            if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
+            continue;
         }
 
-        /* passthrough */
-        while (*p&&*p!='\n') cb_bc(&passthru,*p++);
-        if (*p=='\n'){cb_bc(&passthru,'\n');p++;}
+        /* ==== CLI codebook directives ==== */
+        if (active_cb == 2) {
+            /* name "APPNAME" */
+            cl = cb_kw(q, "name");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                cb_read_quoted(a, cli.app_name, sizeof(cli.app_name));
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* desc "DESCRIPTION" */
+            cl = cb_kw(q, "desc");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                cb_read_quoted(a, cli.app_desc, sizeof(cli.app_desc));
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* flag NAME -X "help" */
+            cl = cb_kw(q, "flag");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                int nl = cb_read_word(a, cli.flags[cli.flag_count].name,
+                                      sizeof(cli.flags[cli.flag_count].name));
+                a = cb_skip_ws(a + nl);
+                /* read short flag: -X */
+                if (*a == '-') {
+                    int si = 0;
+                    while (*a && *a != ' ' && *a != '\t' && si < 3) {
+                        cli.flags[cli.flag_count].shortf[si++] = *a++;
+                    }
+                    cli.flags[cli.flag_count].shortf[si] = '\0';
+                    a = cb_skip_ws(a);
+                }
+                cb_read_quoted(a, cli.flags[cli.flag_count].help,
+                               sizeof(cli.flags[cli.flag_count].help));
+                cli.flag_count++;
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* arg NAME "help" */
+            cl = cb_kw(q, "arg");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                int nl = cb_read_word(a, cli.args[cli.arg_count].name,
+                                      sizeof(cli.args[cli.arg_count].name));
+                a = cb_skip_ws(a + nl);
+                cb_read_quoted(a, cli.args[cli.arg_count].help,
+                               sizeof(cli.args[cli.arg_count].help));
+                cli.arg_count++;
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* passthrough in cli mode (user code like cli_main) */
+            while (*p && *p != '\n') cb_bc(&passthru, *p++);
+            if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
+            continue;
+        }
+
+        /* ==== REST codebook directives ==== */
+        if (active_cb == 3) {
+            /* listen PORT */
+            cl = cb_cem(q, CP_LISTEN);
+            if (!cl) cl = cb_kw(q, "listen");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                rest.port = atoi(a); if (rest.port <= 0) rest.port = 8080;
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* model NAME field1 field2 ... */
+            cl = cb_kw(q, "model");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                int mi = rest.model_count;
+                int nl = cb_read_word(a, rest.models[mi].name, sizeof(rest.models[mi].name));
+                a = cb_skip_ws(a + nl);
+                rest.models[mi].field_count = 0;
+                while (*a && *a != '\n' && *a != '\r') {
+                    int fi = rest.models[mi].field_count;
+                    int wl = cb_read_word(a, rest.models[mi].fields[fi],
+                                          sizeof(rest.models[mi].fields[fi]));
+                    if (wl == 0) break;
+                    rest.models[mi].field_count++;
+                    a = cb_skip_ws(a + wl);
+                }
+                rest.model_count++;
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* GET/POST /PATH verb MODEL  OR  GET /PATH "text" */
+            if (strncmp(q, "GET ", 4) == 0 || strncmp(q, "POST ", 5) == 0) {
+                int ri = rest.route_count;
+                RestMethod meth = REST_GET;
+                const char *a = q;
+                if (strncmp(a, "POST", 4) == 0) { meth = REST_POST; a = cb_skip_ws(a + 4); }
+                else { a = cb_skip_ws(a + 3); }
+                rest.routes[ri].method = meth;
+
+                int pl = cb_read_path(a, rest.routes[ri].path, sizeof(rest.routes[ri].path));
+                a = cb_skip_ws(a + pl);
+
+                /* check for quoted static text */
+                if (*a == '"') {
+                    rest.routes[ri].kind = REST_STATIC;
+                    cb_read_quoted(a, rest.routes[ri].content, sizeof(rest.routes[ri].content));
+                } else {
+                    /* verb MODEL: "list user" or "create user" */
+                    char verb[32]; int vl = cb_read_word(a, verb, sizeof(verb)); a = cb_skip_ws(a + vl);
+                    cb_read_word(a, rest.routes[ri].model, sizeof(rest.routes[ri].model));
+                    if (strcmp(verb, "list") == 0) rest.routes[ri].kind = REST_LIST;
+                    else if (strcmp(verb, "create") == 0) rest.routes[ri].kind = REST_CREATE;
+                    else { fprintf(stderr, "codebook: unknown REST verb '%s'\n", verb); exit(1); }
+                }
+                rest.route_count++;
+                p = cb_line_end(a); if (*p == '\n') p++; continue;
+            }
+
+            /* passthrough in rest mode */
+            while (*p && *p != '\n') cb_bc(&passthru, *p++);
+            if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
+            continue;
+        }
+
+        /* ==== TEST codebook directives ==== */
+        if (active_cb == 4) {
+            /* test "NAME" { body } */
+            cl = cb_kw(q, "test");
+            if (cl) {
+                const char *a = cb_skip_ws(q + cl);
+                int ql2 = cb_read_quoted(a, tst.cases[tst.count].name,
+                                         sizeof(tst.cases[tst.count].name));
+                a = cb_skip_ws(a + ql2);
+                if (*a == '{') {
+                    int bl = cb_read_block(a, tst.cases[tst.count].body,
+                                           sizeof(tst.cases[tst.count].body));
+                    a += bl;
+                }
+                tst.count++;
+                p = cb_line_end(a); while (*p == '\n' || *p == '\r') p++; continue;
+            }
+
+            /* passthrough in test mode (user code — functions under test) */
+            while (*p && *p != '\n') cb_bc(&passthru, *p++);
+            if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
+            continue;
+        }
+
+        /* fallback passthrough */
+        while (*p && *p != '\n') cb_bc(&passthru, *p++);
+        if (*p == '\n') { cb_bc(&passthru, '\n'); p++; }
     }
 
-    if (!found_codebook) { free(passthru.d); return (char*)src; }
+    if (!found_codebook) { free(passthru.d); return (char *)src; }
+
+    /* ==== dispatch to codebook-specific generators ==== */
+    if (active_cb == 2) {
+        /* CLI codebook */
+        if (!cli.app_name[0]) strcpy(cli.app_name, "app");
+        CBuf out = {0};
+        gen_cli(&cli, &passthru, &out);
+        free(passthru.d);
+        return cb_bz(&out);
+    }
+
+    if (active_cb == 3) {
+        /* REST codebook */
+        if (rest.port <= 0) rest.port = 8080;
+        CBuf out = {0};
+        gen_rest(&rest, &passthru, &out);
+        free(passthru.d);
+        return cb_bz(&out);
+    }
+
+    if (active_cb == 4) {
+        /* Test codebook */
+        CBuf out = {0};
+        gen_test(&tst, &passthru, &out);
+        free(passthru.d);
+        return cb_bz(&out);
+    }
 
     /* ---- generate output ---- */
     CBuf out={0};

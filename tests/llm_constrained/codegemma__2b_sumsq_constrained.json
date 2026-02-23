@@ -1,0 +1,15 @@
+{
+  "functions": [
+    {
+      "name": "sum",
+      "params": "range",
+      "body": "for( i := 1..=100 { acc += i * i }"
+    },
+    {
+      "name": "print",
+      "params": "expr",
+      "body": "print(expr)"
+    }
+  ],
+  "main_body": "print(sum(range))"
+}

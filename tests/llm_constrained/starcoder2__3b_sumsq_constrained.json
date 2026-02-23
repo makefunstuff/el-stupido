@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "sum",
+      "params": "",
+      "body": "let acc = 0; for i := 1..=100 { acc += i * i }; acc"
+    }
+  ],
+  "main_body": "let acc = 0; for i := 1..=100 { acc += i * i }; acc"
+}

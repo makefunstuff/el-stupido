@@ -1,0 +1,15 @@
+{
+  "functions": [
+    {
+      "name": "main",
+      "params": "",
+      "body": "for i := 2..=50 { \n  if is_prime(i) { print(i); } \n}"
+    },
+    {
+      "name": "is_prime",
+      "params": "n",
+      "body": "if n <= 1 { return false; }\nfor d := 2..=(n-1) { \n  if (n % d == 0) { return false; } \n}\nreturn true;"
+    }
+  ],
+  "main_body": "main()"
+}

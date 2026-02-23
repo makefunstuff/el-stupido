@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "fizzbuzz",
+      "params": "n",
+      "body": "for i := 1..=n {\n  if (n % 15 == 0) printf('FizzBuzz\n');\n  else if (n % 3 == 0) printf('Fizz\n');\n  else if (n % 5 == 0) printf('Buzz\n');\n  else printf('%d\n', i)"
+    }
+  ],
+  "main_body": "for (int i = 1; i <= 30; i++) {\n  printf(funcfungsions.fizzbuzz(i));\n}"
+}

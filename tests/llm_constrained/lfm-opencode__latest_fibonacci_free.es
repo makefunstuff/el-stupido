@@ -1,0 +1,1 @@
+def fib(n): n < 2 ? n : fib(n-1) + fib(n-2); for i in range(1,21): print(fib(i))

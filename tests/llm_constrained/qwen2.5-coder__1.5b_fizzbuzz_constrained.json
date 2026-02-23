@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "printf",
+      "params": "fmt, args",
+      "body": "console.log(fmt, ...args)"
+    }
+  ],
+  "main_body": "for (let i = 1; i <= 30; i++) { if (i % 15 === 0) { printf(\"FizzBuzz\\n\", i); } else if (i % 3 === 0) { printf(\"Fizz\\n\", i); } else if (i % 5 === 0) { printf(\"Buzz\\n\", i); } else { printf(\"%d\\n\", i); } }"
+}

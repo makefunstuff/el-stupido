@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "fib",
+      "params": "n",
+      "body": "n < 2 ? n : fib(n-1) + fib(n-2)"
+    }
+  ],
+  "main_body": "for i := 1..=20 { print(fib(i)) }"
+}

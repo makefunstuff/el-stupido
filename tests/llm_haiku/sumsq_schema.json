@@ -1,0 +1,1 @@
+{"functions": [], "main_body": "acc := 0\nfor i := 1..=100 {\n  acc += i * i\n}\nprint(acc)"}

@@ -1,0 +1,20 @@
+{
+  "functions": [
+    {
+      "name": "fib",
+      "params": "n",
+      "body": "n < 2 ? n : fib(n-1) + fib(n-2)"
+    },
+    {
+      "name": "Ternary",
+      "params": "cond",
+      "body": "print(f(a..=b))"
+    },
+    {
+      "name": "For",
+      "params": "i",
+      "body": "for i := 1..=n { print(fib(i)) }"
+    }
+  ],
+  "main_body": "print('First 20 Fibonacci numbers:');"
+}

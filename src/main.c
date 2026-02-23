@@ -6,9 +6,10 @@
 #include "codegen.h"
 #include "preproc.h"
 #include "codebook.h"
+#include "normalize.h"
 
 static void usage(void) {
-    fprintf(stderr, "usage: esc <input.es> [-o <output>] [-O<level>] [--wasm] [--emit-ir]\n");
+    fprintf(stderr, "usage: esc <input.es> [-o <output>] [-O<level>] [--wasm] [--emit-ir] [--dump-expanded] [--dump-normalized]\n");
     exit(1);
 }
 
@@ -20,6 +21,8 @@ int main(int argc, char **argv) {
     int opt_level = 0;
     bool emit_ir = false;
     bool target_wasm = false;
+    bool dump_expanded = false;
+    bool dump_normalized = false;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0) {
@@ -31,6 +34,10 @@ int main(int argc, char **argv) {
             emit_ir = true;
         } else if (strcmp(argv[i], "--wasm") == 0) {
             target_wasm = true;
+        } else if (strcmp(argv[i], "--dump-expanded") == 0) {
+            dump_expanded = true;
+        } else if (strcmp(argv[i], "--dump-normalized") == 0) {
+            dump_normalized = true;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "unknown option: %s\n", argv[i]);
             usage();
@@ -51,8 +58,26 @@ int main(int argc, char **argv) {
     if (pp != raw) free(raw);
 
     /* codebook: expand domain directives (use web, etc.) */
-    char *src = codebook_expand(pp);
-    if (src != pp) free(pp);
+    char *expanded = codebook_expand(pp);
+    if (expanded != pp) free(pp);
+
+    /* --dump-expanded: print codebook/macro-expanded source and exit */
+    if (dump_expanded) {
+        fprintf(stdout, "%s", expanded);
+        free(expanded);
+        return 0;
+    }
+
+    /* intent normalization: canonicalize friendly aliases before parse */
+    char *src = normalize_source(expanded);
+    free(expanded);
+
+    /* --dump-normalized: print canonicalized source and exit */
+    if (dump_normalized) {
+        fprintf(stdout, "%s", src);
+        free(src);
+        return 0;
+    }
 
     /* parse -- detect front-end by file extension */
     Node *program;

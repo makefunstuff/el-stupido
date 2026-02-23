@@ -392,6 +392,21 @@ static Token scan_string(Lexer *l) {
             case '"':  buf[i++] = '"';  break;
             case '0':  buf[i++] = '\0'; break;
             case 'r':  buf[i++] = '\r'; break;
+            case 'x': {
+                /* \xHH hex escape */
+                advance(l);
+                int val = 0;
+                for (int h = 0; h < 2 && peek(l); h++) {
+                    char ch = peek(l);
+                    if (ch >= '0' && ch <= '9') val = val * 16 + (ch - '0');
+                    else if (ch >= 'a' && ch <= 'f') val = val * 16 + (ch - 'a' + 10);
+                    else if (ch >= 'A' && ch <= 'F') val = val * 16 + (ch - 'A' + 10);
+                    else break;
+                    advance(l);
+                }
+                buf[i++] = (char)val;
+                continue; /* skip the advance at end of switch */
+            }
             default:   buf[i++] = peek(l); break;
             }
             advance(l);

@@ -1,0 +1,15 @@
+{
+  "functions": [
+    {
+      "name": "sum",
+      "params": "[integer] n ",
+      "body": "\nacc = 0\nfor i = integer 1..= ($input[0]) {\n acc += $i * $i \n}\nexpr = $acc end_expr;"
+    },
+    {
+      "name": "print",
+      "params": "[expression] expr ",
+      "body": "\naction = print($$\nend action;\nexecution start;action stop;"
+    }
+  ],
+  "main_body": "\ndata = 100 ; sum (data); \nexit main end."
+}

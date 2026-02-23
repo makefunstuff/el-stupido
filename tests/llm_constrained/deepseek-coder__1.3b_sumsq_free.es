@@ -1,0 +1,6 @@
+Here is the El Stupido program for your task, written using only EL (Easy Language) syntax and without any additional libraries or tools required to parse a json specification file in this case because it's not necessary as per requirement of no extra JSON parsing needed here. 
+
+-stupido
+def main_body:= {acc := 0; for i range from 1..to (n) do acc += i * i} print(expr)} n set to 100, expr computed as sum of squares up until given number is requested. The result should be printed out in the end which will match with your requirement:
+  
+This program first initializes a variable `acc` and sets it equal zero then enters into an infinite loop where for every iteration i from 1 to n (inclusive), we add square of current value 'i' times. After all iterations are done, the result is printed out which should match with your requirement: summation up until given number squared in this case `n` set as 100 and expr computed using formula for sums from one to n ie (sum(from=1..to N) {acc += x *x}).

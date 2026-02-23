@@ -1,0 +1,4 @@
+fn main() {
+  let acc = 0
+  for i in 1..=100 { acc += (i * i) } print(acc)
+}

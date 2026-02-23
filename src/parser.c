@@ -28,6 +28,12 @@ static Token expect(Parser *p, TokenKind k) {
 
 static bool check(Parser *p, TokenKind k) { return p->tok.kind == k; }
 
+/* check if current token is a specific identifier (by name) */
+static bool tok_is(Parser *p, const char *name) {
+    return p->tok.kind == TOK_IDENT && p->tok.len == (int)strlen(name) &&
+           memcmp(p->tok.start, name, p->tok.len) == 0;
+}
+
 static bool match(Parser *p, TokenKind k) {
     if (p->tok.kind == k) { next(p); return true; }
     return false;
@@ -96,6 +102,8 @@ static EsType *parse_type(Parser *p) {
     case TOK_F32: next(p); return type_basic(TY_F32);
     case TOK_F64: next(p); return type_basic(TY_F64);
     case TOK_VOID: next(p); return type_basic(TY_VOID);
+    /* canonical lowering: bool is represented as i32 in core IR */
+    case TOK_BOOL: next(p); return type_basic(TY_I32);
     case TOK_IDENT: {
         /* named struct type */
         Token t = p->tok; next(p);
@@ -115,7 +123,7 @@ static bool is_type_start(Parser *p) {
     switch (p->tok.kind) {
     case TOK_I8: case TOK_I16: case TOK_I32: case TOK_I64:
     case TOK_U8: case TOK_U16: case TOK_U32: case TOK_U64:
-    case TOK_F32: case TOK_F64: case TOK_VOID:
+    case TOK_F32: case TOK_F64: case TOK_VOID: case TOK_BOOL:
     case TOK_STAR: case TOK_LBRACKET:
         return true;
     default:
@@ -183,6 +191,58 @@ static Param *parse_params(Parser *p, int *count, bool *vararg, bool allow_anon)
     return da.items;
 }
 
+/* Parse struct init payload: Type { field: expr, ... } */
+static Node *parse_struct_init_literal(Parser *p, EsType *ty, int line, int col) {
+    struct { char **items; int count; int cap; } fnames = {0};
+    struct { Node **items; int count; int cap; } fvals = {0};
+
+    expect(p, TOK_LBRACE);
+    skip_nl(p);
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+        Token fname = expect(p, TOK_IDENT);
+        expect(p, TOK_COLON);
+        da_push(fnames, tok_name(&fname));
+        da_push(fvals, parse_expr(p));
+        if (!match(p, TOK_COMMA)) {
+            skip_nl(p);
+            if (!check(p, TOK_RBRACE)) skip_nl(p);
+        } else {
+            skip_nl(p);
+        }
+    }
+    expect(p, TOK_RBRACE);
+
+    Node *n = node_new(ND_STRUCT_INIT, line, col);
+    n->struct_init.stype = ty;
+    n->struct_init.fields = fnames.items;
+    n->struct_init.vals = fvals.items;
+    n->struct_init.field_count = fnames.count;
+    return n;
+}
+
+/* Disambiguate IDENT { ... } between struct-init and statement block opener.
+   Struct init must start with `}` (empty) or `ident:` field syntax. */
+static bool looks_like_struct_init(Parser *p) {
+    if (!check(p, TOK_LBRACE)) return false;
+    Token saved = p->tok;
+    Lexer saved_lex = p->lex;
+
+    next(p); /* consume '{' */
+    skip_nl(p);
+
+    bool ok = false;
+    if (check(p, TOK_RBRACE)) {
+        ok = true;
+    } else if (check(p, TOK_IDENT)) {
+        next(p);
+        ok = check(p, TOK_COLON);
+    }
+
+    p->tok = saved;
+    p->lex = saved_lex;
+    return ok;
+}
+
 /* ---- expression parsing (precedence climbing) ---- */
 static Node *parse_primary(Parser *p) {
     int line = p->tok.line, col = p->tok.col;
@@ -218,9 +278,19 @@ static Node *parse_primary(Parser *p) {
         return node_new(ND_NULL_LIT, line, col);
     }
 
-    /* identifier */
+    /* identifier or struct init sugar: T { ... } */
     if (check(p, TOK_IDENT)) {
-        Token t = p->tok; next(p);
+        Token t = p->tok;
+        next(p);
+
+        if (check(p, TOK_LBRACE) && looks_like_struct_init(p)) {
+            /* intent lowering: allow `Point { x: 1 }` in addition to `✨ Point { ... }` */
+            EsType *ty = (EsType *)calloc(1, sizeof(EsType));
+            ty->kind = TY_STRUCT;
+            ty->strct.name = tok_name(&t);
+            return parse_struct_init_literal(p, ty, line, col);
+        }
+
         Node *n = node_new(ND_IDENT, line, col);
         n->ident.name = tok_name(&t);
         return n;
@@ -248,24 +318,7 @@ static Node *parse_primary(Parser *p) {
         EsType *ty = parse_type(p);
         /* struct init literal: nw T { f: v, ... } */
         if (check(p, TOK_LBRACE)) {
-            next(p); skip_nl(p);
-            struct { char **items; int count; int cap; } fnames = {0};
-            struct { Node **items; int count; int cap; } fvals = {0};
-            while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
-                Token fname = expect(p, TOK_IDENT);
-                expect(p, TOK_COLON);
-                da_push(fnames, tok_name(&fname));
-                da_push(fvals, parse_expr(p));
-                if (!match(p, TOK_COMMA)) { skip_nl(p); if (!check(p, TOK_RBRACE)) skip_nl(p); }
-                else skip_nl(p);
-            }
-            expect(p, TOK_RBRACE);
-            Node *n = node_new(ND_STRUCT_INIT, line, col);
-            n->struct_init.stype = ty;
-            n->struct_init.fields = fnames.items;
-            n->struct_init.vals = fvals.items;
-            n->struct_init.field_count = fnames.count;
-            return n;
+            return parse_struct_init_literal(p, ty, line, col);
         }
         /* plain nw T: malloc(sz T) as *T */
         Node *callee = node_new(ND_IDENT, line, col);
@@ -748,6 +801,37 @@ static Node *parse_stmt(Parser *p) {
         perror_at(p, "expected ':=' or ':' after 'var'");
     }
 
+    /* print/check as statement keywords (allow without parens):
+       print expr   →  print(expr)
+       check expr   →  check(expr)  */
+    if (check(p, TOK_IDENT) &&
+        (tok_is(p, "print") || tok_is(p, "check"))) {
+        Token saved = p->tok;
+        Lexer saved_lex = p->lex;
+        next(p);
+        /* only rewrite if NOT followed by := : ( — those are normal decl/call */
+        if (!check(p, TOK_DECL_ASSIGN) && !check(p, TOK_COLON) &&
+            !check(p, TOK_NEWLINE) && !check(p, TOK_SEMI) &&
+            !check(p, TOK_EOF) && !check(p, TOK_RBRACE)) {
+            /* synthesize: name(expr) */
+            Node *callee = node_new(ND_IDENT, line, col);
+            callee->ident.name = tok_name(&saved);
+            Node *arg = parse_expr(p);
+            Node *call = node_new(ND_CALL, line, col);
+            call->call.callee = callee;
+            call->call.args = (Node **)malloc(sizeof(Node *));
+            call->call.args[0] = arg;
+            call->call.arg_count = 1;
+            Node *stmt = node_new(ND_EXPR_STMT, line, col);
+            stmt->expr_stmt.expr = call;
+            expect_nl_or_end(p);
+            return stmt;
+        }
+        /* rewind — it's a normal declaration or bare statement */
+        p->tok = saved;
+        p->lex = saved_lex;
+    }
+
     /* declaration:  ID : type = expr  OR  ID := expr */
     if (check(p, TOK_IDENT)) {
         /* peek ahead for := or : type = */
@@ -870,6 +954,27 @@ static Node *parse_ext_decl(Parser *p) {
     return n;
 }
 
+/* Recursively check if a block contains any 'return expr' (non-void return). */
+static bool block_has_return_value(Node *n) {
+    if (!n) return false;
+    if (n->kind == ND_RET) return n->ret.value != NULL;
+    if (n->kind == ND_BLOCK) {
+        for (int i = 0; i < n->block.count; i++)
+            if (block_has_return_value(n->block.stmts[i])) return true;
+    }
+    if (n->kind == ND_IF) {
+        if (block_has_return_value(n->if_stmt.then_blk)) return true;
+        if (block_has_return_value(n->if_stmt.else_blk)) return true;
+    }
+    if (n->kind == ND_WHILE) return block_has_return_value(n->while_stmt.body);
+    if (n->kind == ND_FOR) return block_has_return_value(n->for_stmt.body);
+    if (n->kind == ND_MATCH) {
+        for (int i = 0; i < n->match_stmt.case_count; i++)
+            if (block_has_return_value(n->match_stmt.case_bodies[i])) return true;
+    }
+    return false;
+}
+
 static Node *parse_fn_decl(Parser *p, bool has_kw) {
     int line = p->tok.line, col = p->tok.col;
     if (has_kw) expect(p, TOK_FN);
@@ -909,6 +1014,9 @@ static Node *parse_fn_decl(Parser *p, bool has_kw) {
         if (ret->kind == TY_VOID && !is_main) ret = type_basic(TY_I32);
     } else {
         body = parse_block(p);
+        /* infer i32 return type for multi-line fns that contain 'return expr' */
+        if (ret->kind == TY_VOID && !is_main && block_has_return_value(body))
+            ret = type_basic(TY_I32);
     }
 
     /* implicit return: convert last expr stmt to ret for non-void, non-main fns */

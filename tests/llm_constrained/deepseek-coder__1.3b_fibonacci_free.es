@@ -1,0 +1,8 @@
+; Recursive functions definition for Fibonacci sequence (fib(n)) with body n < 2 ? n : fib(n - 1) + fib(n - 2).
+[| [0, ifelse ((x <- range.fromTo (-> x + 3)), then="return", else-"") ] |] = { "body": ["if (true)", {"condition":"fib((<--range)) < 2 ? fib((++range) - 1), + fib(n - 2)"}] }
+; Ternary operator definition for condition. If a then b, print f(a). Else prints f(b..c); where c is the upper limit of range (fib sequence to be printed from 'a' upto and including 'b'). Prints fibonacci numbers between 1...20
+[| [printIfElif ((x <- "range.fromTo (-> x + 3)"), then="return", else-"") ] = { ... } |] = `{ {"condition":"fib((<--(a)) < 2 ? fib(--b), + (c - b)"}, where a is the lower limit of range, c is upper and f(x..y).
+; For loop definition for iterating over sequence from 1...n. Prints Fibonacci numbers up to n in each iteration using print statement as "print fib((++range))". The end result should be first 'n' number of terms printed out by the program, ie., prints f(a)..f(b).
+[| [0 .. 21] | ] = { ... } // Prints Fibonacci numbers between a and b. "print fib((++range))" is used to print each term in sequence from 'n' upto but not including the upper limit of range (i.e., f(b)).
+ 
+This code snippet uses Elisp, an interpreted compiled language for Scheme-like programming languages like Lisp and Clojure that includes a subset of Common Lisp in its core with additional features added by Racket communities or other contributors to the standard. The syntax used here is based on common lambda calculus notation (also known as "lambda" math), which Elisp uses for defining functions, recursion etc., and it's also Scheme-like due to use of `let` bindings in place of JSON object literals or hash maps/dictionaries.

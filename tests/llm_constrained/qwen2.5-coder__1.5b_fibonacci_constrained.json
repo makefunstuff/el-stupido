@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "fib",
+      "params": "n",
+      "body": "if (n < 2) return n; else return fib(n-1) + fib(n-2);"
+    }
+  ],
+  "main_body": "for (let i = 1; i <= 20; i++) console.log(fib(i));"
+}

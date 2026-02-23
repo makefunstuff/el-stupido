@@ -45,7 +45,7 @@ typedef struct {
 
 /* ---- symbol table ---- */
 static void sym_push(CG *g, const char *name, LLVMValueRef val, EsType *ty, LLVMTypeRef ft) {
-    assert(g->sym_count < 1024);
+    if (g->sym_count >= 1024) es_fatal("symbol table overflow (max 1024 symbols)");
     g->syms[g->sym_count].name = es_strdup(name);
     g->syms[g->sym_count].value = val;
     g->syms[g->sym_count].type = ty;
@@ -171,6 +171,96 @@ static LLVMValueRef cg_expr(CG *g, Node *n);
 static LLVMValueRef cg_builtin_print(CG *g, Node *n) {
     if (n->call.arg_count < 1) es_fatal("print requires at least 1 argument");
 
+    /* Auto-map: print(f(range)) → for i in range { print(f(i)) }
+       Also:     print(range) → for i in range { print(i) } */
+    Node *arg0 = n->call.args[0];
+    Node *range_node = NULL;
+    if (arg0->kind == ND_BINARY && (arg0->binary.op == TOK_RANGE || arg0->binary.op == TOK_RANGE_INC)) {
+        range_node = arg0;
+    } else if (arg0->kind == ND_CALL && arg0->call.arg_count == 1 && arg0->call.callee->kind == ND_IDENT) {
+        Node *inner = arg0->call.args[0];
+        /* only auto-map if the callee is a user-defined function (not a builtin) */
+        const char *cname = arg0->call.callee->ident.name;
+        bool is_builtin = (strcmp(cname,"product")==0 || strcmp(cname,"sum")==0 ||
+                           strcmp(cname,"count")==0 || strcmp(cname,"min")==0 ||
+                           strcmp(cname,"max")==0 || strcmp(cname,"print")==0 ||
+                           strcmp(cname,"each")==0 || strcmp(cname,"check")==0);
+        if (!is_builtin && inner->kind == ND_BINARY && (inner->binary.op == TOK_RANGE || inner->binary.op == TOK_RANGE_INC)) {
+            if (sym_lookup(g, cname)) /* verify function exists */
+                range_node = inner;
+        }
+    }
+    if (range_node) {
+        /* expand as loop */
+        bool inclusive = (range_node->binary.op == TOK_RANGE_INC);
+        LLVMValueRef start_val = cg_expr(g, range_node->binary.left);
+        LLVMValueRef end_val = cg_expr(g, range_node->binary.right);
+        LLVMTypeRef i64_ty = LLVMInt64TypeInContext(g->ctx);
+        start_val = LLVMBuildIntCast2(g->bld, start_val, i64_ty, true, "ps");
+        end_val = LLVMBuildIntCast2(g->bld, end_val, i64_ty, true, "pe");
+
+        LLVMValueRef i_ptr = LLVMBuildAlloca(g->bld, i64_ty, "pi");
+        LLVMBuildStore(g->bld, start_val, i_ptr);
+
+        LLVMValueRef fn_v = g->cur_fn;
+        LLVMBasicBlockRef cbb = LLVMAppendBasicBlockInContext(g->ctx, fn_v, "pm_c");
+        LLVMBasicBlockRef bbb = LLVMAppendBasicBlockInContext(g->ctx, fn_v, "pm_b");
+        LLVMBasicBlockRef ebb = LLVMAppendBasicBlockInContext(g->ctx, fn_v, "pm_e");
+
+        LLVMBuildBr(g->bld, cbb);
+        LLVMPositionBuilderAtEnd(g->bld, cbb);
+        LLVMValueRef iv = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "piv");
+        LLVMValueRef cmp = inclusive
+            ? LLVMBuildICmp(g->bld, LLVMIntSLE, iv, end_val, "pc")
+            : LLVMBuildICmp(g->bld, LLVMIntSLT, iv, end_val, "pc");
+        LLVMBuildCondBr(g->bld, cmp, bbb, ebb);
+
+        LLVMPositionBuilderAtEnd(g->bld, bbb);
+        LLVMValueRef iv2 = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "piv2");
+
+        /* compute value to print: either f(i) or just i */
+        struct Symbol *printf_sym = sym_lookup(g, "printf");
+        if (!printf_sym) es_fatal("print requires printf (load std prelude)");
+
+        LLVMValueRef print_val;
+        const char *fmt;
+        if (arg0->kind == ND_CALL && arg0->call.callee->kind == ND_IDENT) {
+            /* print(f(range)) → call f(i), print result */
+            struct Symbol *fsym = sym_lookup(g, arg0->call.callee->ident.name);
+            if (!fsym) {
+                /* might be a builtin like product — fall through to non-range path */
+                goto no_range;
+            }
+            int fpc = LLVMCountParamTypes(fsym->llvm_fn_type);
+            LLVMTypeRef fpt = i64_ty;
+            if (fpc > 0) { LLVMTypeRef pts[1]; LLVMGetParamTypes(fsym->llvm_fn_type, pts); fpt = pts[0]; }
+            LLVMValueRef ca = LLVMBuildIntCast2(g->bld, iv2, fpt, true, "pca");
+            LLVMValueRef fargs[1] = { ca };
+            print_val = LLVMBuildCall2(g->bld, fsym->llvm_fn_type, fsym->value, fargs, 1, "pfr");
+            LLVMTypeRef rty = LLVMGetReturnType(fsym->llvm_fn_type);
+            if (LLVMGetTypeKind(rty) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(rty) > 32)
+                fmt = "%lld\n";
+            else fmt = "%d\n";
+        } else {
+            /* print(range) → print each i */
+            print_val = iv2;
+            fmt = "%lld\n";
+        }
+
+        LLVMValueRef fmts = LLVMBuildGlobalStringPtr(g->bld, fmt, "pm_fmt");
+        LLVMValueRef pargs[2] = { fmts, print_val };
+        LLVMBuildCall2(g->bld, printf_sym->llvm_fn_type, printf_sym->value, pargs, 2, "");
+
+        LLVMValueRef next = LLVMBuildAdd(g->bld, iv2, LLVMConstInt(i64_ty, 1, false), "pn");
+        LLVMBuildStore(g->bld, next, i_ptr);
+        LLVMBuildBr(g->bld, cbb);
+
+        LLVMPositionBuilderAtEnd(g->bld, ebb);
+        n->type = type_basic(TY_VOID);
+        return LLVMConstInt(LLVMInt32TypeInContext(g->ctx), 0, false);
+    }
+    no_range: ;
+
     /* Look up printf */
     struct Symbol *printf_sym = sym_lookup(g, "printf");
     if (!printf_sym) es_fatal("print requires printf (load std prelude)");
@@ -205,22 +295,50 @@ static LLVMValueRef cg_builtin_print(CG *g, Node *n) {
     return LLVMBuildCall2(g->bld, printf_type, printf_sym->value, args, 2, "");
 }
 
-/* Expand product(start..end) or product(start..=end) to accumulator loop */
+/* Expand reducers:
+   product(range), sum(range), count(range), min(range), max(range)
+   plus mapped form: sum(f(range)), product(f(range)), ... */
 static LLVMValueRef cg_builtin_reduce(CG *g, Node *n, const char *name) {
-    if (n->call.arg_count != 1) es_fatal("%s requires exactly 1 range argument", name);
+    if (n->call.arg_count != 1) es_fatal("%s requires exactly 1 argument", name);
 
     Node *arg = n->call.args[0];
-    if (arg->kind != ND_BINARY || (arg->binary.op != TOK_RANGE && arg->binary.op != TOK_RANGE_INC))
-        es_fatal("%s argument must be a range (start..end or start..=end)", name);
+    Node *range = NULL;
+    struct Symbol *map_sym = NULL;
+    EsType *map_param_ty = NULL;
 
-    bool inclusive = (arg->binary.op == TOK_RANGE_INC);
-    LLVMValueRef start_val = cg_expr(g, arg->binary.left);
-    LLVMValueRef end_val = cg_expr(g, arg->binary.right);
+    if (arg->kind == ND_BINARY && (arg->binary.op == TOK_RANGE || arg->binary.op == TOK_RANGE_INC)) {
+        range = arg;
+    } else if (arg->kind == ND_CALL &&
+               arg->call.arg_count == 1 &&
+               arg->call.callee->kind == ND_IDENT) {
+        Node *inner = arg->call.args[0];
+        if (inner->kind == ND_BINARY && (inner->binary.op == TOK_RANGE || inner->binary.op == TOK_RANGE_INC)) {
+            range = inner;
+            map_sym = sym_lookup(g, arg->call.callee->ident.name);
+            if (!map_sym)
+                es_fatal("%s mapper '%s' is undefined", name, arg->call.callee->ident.name);
+            if (!map_sym->llvm_fn_type)
+                es_fatal("%s mapper '%s' is not a function", name, arg->call.callee->ident.name);
+            if (map_sym->type && map_sym->type->kind == TY_FN) {
+                int pc = map_sym->type->fn.param_count;
+                if (!map_sym->type->fn.is_vararg && pc != 1)
+                    es_fatal("%s mapper '%s' must take exactly 1 argument", name, map_sym->name);
+                if (pc > 0) map_param_ty = map_sym->type->fn.params[0];
+            }
+        }
+    }
 
-    /* coerce to i32 */
-    LLVMTypeRef i32_ty = LLVMInt32TypeInContext(g->ctx);
-    start_val = LLVMBuildIntCast2(g->bld, start_val, i32_ty, true, "s");
-    end_val = LLVMBuildIntCast2(g->bld, end_val, i32_ty, true, "e");
+    if (!range)
+        es_fatal("%s argument must be range or mapped range (e.g. %s(1..=n) or %s(f(1..=n)))", name, name, name);
+
+    bool inclusive = (range->binary.op == TOK_RANGE_INC);
+    LLVMValueRef start_val = cg_expr(g, range->binary.left);
+    LLVMValueRef end_val = cg_expr(g, range->binary.right);
+
+    /* use i64 for accumulator (prevents overflow: 13! > INT32_MAX) */
+    LLVMTypeRef i64_ty = LLVMInt64TypeInContext(g->ctx);
+    start_val = LLVMBuildIntCast2(g->bld, start_val, i64_ty, true, "s");
+    end_val = LLVMBuildIntCast2(g->bld, end_val, i64_ty, true, "e");
 
     /* determine init value and operation */
     bool is_product = (strcmp(name, "product") == 0);
@@ -230,14 +348,14 @@ static LLVMValueRef cg_builtin_reduce(CG *g, Node *n, const char *name) {
     bool is_max = (strcmp(name, "max") == 0);
 
     LLVMValueRef init;
-    if (is_product) init = LLVMConstInt(i32_ty, 1, false);
-    else if (is_min) init = LLVMConstInt(i32_ty, 2147483647, false);
-    else if (is_max) init = LLVMConstInt(i32_ty, -2147483648ULL, true);
-    else init = LLVMConstInt(i32_ty, 0, false); /* sum, count */
+    if (is_product) init = LLVMConstInt(i64_ty, 1, false);
+    else if (is_min) init = LLVMConstInt(i64_ty, 0x7FFFFFFFFFFFFFFFULL, false);
+    else if (is_max) init = LLVMConstInt(i64_ty, 0x8000000000000000ULL, true);
+    else init = LLVMConstInt(i64_ty, 0, false); /* sum, count */
 
     /* alloca for accumulator and iterator */
-    LLVMValueRef acc_ptr = LLVMBuildAlloca(g->bld, i32_ty, "acc");
-    LLVMValueRef i_ptr = LLVMBuildAlloca(g->bld, i32_ty, "i");
+    LLVMValueRef acc_ptr = LLVMBuildAlloca(g->bld, i64_ty, "acc");
+    LLVMValueRef i_ptr = LLVMBuildAlloca(g->bld, i64_ty, "i");
     LLVMBuildStore(g->bld, init, acc_ptr);
     LLVMBuildStore(g->bld, start_val, i_ptr);
 
@@ -251,40 +369,198 @@ static LLVMValueRef cg_builtin_reduce(CG *g, Node *n, const char *name) {
 
     /* condition: i < end (exclusive) or i <= end (inclusive) */
     LLVMPositionBuilderAtEnd(g->bld, cond_bb);
-    LLVMValueRef i_val = LLVMBuildLoad2(g->bld, i32_ty, i_ptr, "iv");
+    LLVMValueRef i_val = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "iv");
     LLVMValueRef cmp = inclusive
         ? LLVMBuildICmp(g->bld, LLVMIntSLE, i_val, end_val, "cmp")
         : LLVMBuildICmp(g->bld, LLVMIntSLT, i_val, end_val, "cmp");
     LLVMBuildCondBr(g->bld, cmp, body_bb, end_bb);
 
-    /* body: acc = acc OP i */
+    /* body: acc = reduce(acc, mapper(i)) */
     LLVMPositionBuilderAtEnd(g->bld, body_bb);
-    LLVMValueRef acc_val = LLVMBuildLoad2(g->bld, i32_ty, acc_ptr, "av");
-    LLVMValueRef i_val2 = LLVMBuildLoad2(g->bld, i32_ty, i_ptr, "iv2");
+    LLVMValueRef acc_val = LLVMBuildLoad2(g->bld, i64_ty, acc_ptr, "av");
+    LLVMValueRef i_val2 = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "iv2");
+
+    LLVMValueRef elem = i_val2;
+    if (map_sym) {
+        LLVMValueRef map_arg = i_val2;
+        LLVMTypeRef map_arg_ty = i64_ty;
+        if (map_param_ty) {
+            map_arg_ty = es_to_llvm(g, map_param_ty);
+        } else {
+            int mpc = LLVMCountParamTypes(map_sym->llvm_fn_type);
+            if (mpc == 1) {
+                LLVMTypeRef mpts[1];
+                LLVMGetParamTypes(map_sym->llvm_fn_type, mpts);
+                map_arg_ty = mpts[0];
+            }
+        }
+        map_arg = coerce(g, map_arg, map_arg_ty);
+        LLVMValueRef margs[1] = { map_arg };
+        elem = LLVMBuildCall2(g->bld, map_sym->llvm_fn_type, map_sym->value, margs, 1, "map");
+    }
+
+    /* normalize mapper output to i64 for reduction */
+    LLVMValueRef elem_i64 = elem;
+    LLVMTypeRef elem_ty = LLVMTypeOf(elem);
+    LLVMTypeKind elem_k = LLVMGetTypeKind(elem_ty);
+    if (elem_k == LLVMIntegerTypeKind) {
+        elem_i64 = LLVMBuildIntCast2(g->bld, elem, i64_ty, true, "ri");
+    } else if (elem_k == LLVMFloatTypeKind || elem_k == LLVMDoubleTypeKind) {
+        elem_i64 = LLVMBuildFPToSI(g->bld, elem, i64_ty, "rf");
+    } else {
+        es_fatal("%s mapper must return numeric type", name);
+    }
 
     LLVMValueRef new_acc;
-    if (is_product) new_acc = LLVMBuildMul(g->bld, acc_val, i_val2, "mul");
-    else if (is_sum) new_acc = LLVMBuildAdd(g->bld, acc_val, i_val2, "add");
-    else if (is_count) new_acc = LLVMBuildAdd(g->bld, acc_val, LLVMConstInt(i32_ty, 1, false), "cnt");
+    if (is_product) new_acc = LLVMBuildMul(g->bld, acc_val, elem_i64, "mul");
+    else if (is_sum) new_acc = LLVMBuildAdd(g->bld, acc_val, elem_i64, "add");
+    else if (is_count) new_acc = LLVMBuildAdd(g->bld, acc_val, LLVMConstInt(i64_ty, 1, false), "cnt");
     else if (is_min) {
-        LLVMValueRef lt = LLVMBuildICmp(g->bld, LLVMIntSLT, i_val2, acc_val, "lt");
-        new_acc = LLVMBuildSelect(g->bld, lt, i_val2, acc_val, "min");
+        LLVMValueRef lt = LLVMBuildICmp(g->bld, LLVMIntSLT, elem_i64, acc_val, "lt");
+        new_acc = LLVMBuildSelect(g->bld, lt, elem_i64, acc_val, "min");
     } else { /* max */
-        LLVMValueRef gt = LLVMBuildICmp(g->bld, LLVMIntSGT, i_val2, acc_val, "gt");
-        new_acc = LLVMBuildSelect(g->bld, gt, i_val2, acc_val, "max");
+        LLVMValueRef gt = LLVMBuildICmp(g->bld, LLVMIntSGT, elem_i64, acc_val, "gt");
+        new_acc = LLVMBuildSelect(g->bld, gt, elem_i64, acc_val, "max");
     }
 
     LLVMBuildStore(g->bld, new_acc, acc_ptr);
 
     /* increment: i = i + 1 */
-    LLVMValueRef one = LLVMConstInt(i32_ty, 1, false);
+    LLVMValueRef one = LLVMConstInt(i64_ty, 1, false);
     LLVMValueRef next_i = LLVMBuildAdd(g->bld, i_val2, one, "next");
     LLVMBuildStore(g->bld, next_i, i_ptr);
     LLVMBuildBr(g->bld, cond_bb);
 
     /* end: load result */
     LLVMPositionBuilderAtEnd(g->bld, end_bb);
-    return LLVMBuildLoad2(g->bld, i32_ty, acc_ptr, "result");
+    LLVMValueRef result = LLVMBuildLoad2(g->bld, i64_ty, acc_ptr, "result");
+    /* set type to i64 so print() picks %lld */
+    n->type = type_basic(TY_I64);
+    return result;
+}
+
+/* Expand each(range, fn) — call fn(i) for each i in range, print results */
+static LLVMValueRef cg_builtin_each(CG *g, Node *n) {
+    if (n->call.arg_count != 2) es_fatal("each requires 2 arguments: each(range, fn)");
+
+    Node *range_arg = n->call.args[0];
+    Node *fn_arg = n->call.args[1];
+
+    if (range_arg->kind != ND_BINARY || (range_arg->binary.op != TOK_RANGE && range_arg->binary.op != TOK_RANGE_INC))
+        es_fatal("each() first argument must be a range");
+
+    bool inclusive = (range_arg->binary.op == TOK_RANGE_INC);
+    LLVMValueRef start_val = cg_expr(g, range_arg->binary.left);
+    LLVMValueRef end_val = cg_expr(g, range_arg->binary.right);
+
+    LLVMTypeRef i64_ty = LLVMInt64TypeInContext(g->ctx);
+    start_val = LLVMBuildIntCast2(g->bld, start_val, i64_ty, true, "s");
+    end_val = LLVMBuildIntCast2(g->bld, end_val, i64_ty, true, "e");
+
+    /* resolve the function */
+    if (fn_arg->kind != ND_IDENT) es_fatal("each() second argument must be a function name");
+    struct Symbol *fn_sym = sym_lookup(g, fn_arg->ident.name);
+    if (!fn_sym) es_fatal("each(): undefined function '%s'", fn_arg->ident.name);
+
+    /* resolve printf for printing results */
+    struct Symbol *printf_sym = sym_lookup(g, "printf");
+
+    /* loop: for i := start..end { print(fn(i)) } */
+    LLVMValueRef i_ptr = LLVMBuildAlloca(g->bld, i64_ty, "ei");
+    LLVMBuildStore(g->bld, start_val, i_ptr);
+
+    LLVMValueRef cur_fn = g->cur_fn;
+    LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(g->ctx, cur_fn, "each_cond");
+    LLVMBasicBlockRef body_bb = LLVMAppendBasicBlockInContext(g->ctx, cur_fn, "each_body");
+    LLVMBasicBlockRef end_bb = LLVMAppendBasicBlockInContext(g->ctx, cur_fn, "each_end");
+
+    LLVMBuildBr(g->bld, cond_bb);
+    LLVMPositionBuilderAtEnd(g->bld, cond_bb);
+    LLVMValueRef iv = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "iv");
+    LLVMValueRef cmp = inclusive
+        ? LLVMBuildICmp(g->bld, LLVMIntSLE, iv, end_val, "cmp")
+        : LLVMBuildICmp(g->bld, LLVMIntSLT, iv, end_val, "cmp");
+    LLVMBuildCondBr(g->bld, cmp, body_bb, end_bb);
+
+    LLVMPositionBuilderAtEnd(g->bld, body_bb);
+    LLVMValueRef iv2 = LLVMBuildLoad2(g->bld, i64_ty, i_ptr, "iv2");
+    /* coerce i64 to function param type (usually i32) */
+    int fn_param_count = LLVMCountParamTypes(fn_sym->llvm_fn_type);
+    LLVMTypeRef first_param = i64_ty;
+    if (fn_param_count > 0) {
+        LLVMTypeRef ptypes[1]; LLVMGetParamTypes(fn_sym->llvm_fn_type, ptypes);
+        first_param = ptypes[0];
+    }
+    LLVMValueRef call_arg = LLVMBuildIntCast2(g->bld, iv2, first_param, true, "ca");
+    LLVMValueRef call_args[1] = { call_arg };
+    LLVMValueRef call_result = LLVMBuildCall2(g->bld, fn_sym->llvm_fn_type, fn_sym->value, call_args, 1, "eres");
+
+    /* print the result */
+    if (printf_sym) {
+        LLVMTypeRef ret_ty = LLVMGetReturnType(fn_sym->llvm_fn_type);
+        const char *fmt = "%lld\n";
+        LLVMValueRef print_val = call_result;
+        if (LLVMGetTypeKind(ret_ty) == LLVMIntegerTypeKind) {
+            unsigned bits = LLVMGetIntTypeWidth(ret_ty);
+            if (bits <= 32) { fmt = "%d\n"; }
+            else { fmt = "%lld\n"; }
+        } else if (LLVMGetTypeKind(ret_ty) == LLVMDoubleTypeKind || LLVMGetTypeKind(ret_ty) == LLVMFloatTypeKind) {
+            fmt = "%f\n";
+        } else if (LLVMGetTypeKind(ret_ty) == LLVMPointerTypeKind) {
+            fmt = "%s\n";
+        }
+        LLVMValueRef fmt_str = LLVMBuildGlobalStringPtr(g->bld, fmt, "each_fmt");
+        LLVMValueRef pargs[2] = { fmt_str, print_val };
+        LLVMBuildCall2(g->bld, printf_sym->llvm_fn_type, printf_sym->value, pargs, 2, "");
+    }
+
+    /* increment */
+    LLVMValueRef next = LLVMBuildAdd(g->bld, iv2, LLVMConstInt(i64_ty, 1, false), "next");
+    LLVMBuildStore(g->bld, next, i_ptr);
+    LLVMBuildBr(g->bld, cond_bb);
+
+    LLVMPositionBuilderAtEnd(g->bld, end_bb);
+    n->type = type_basic(TY_VOID);
+    return LLVMConstInt(LLVMInt32TypeInContext(g->ctx), 0, false);
+}
+
+/* Expand check(expr) — assert at runtime, abort with message on failure */
+static LLVMValueRef cg_builtin_check(CG *g, Node *n) {
+    if (n->call.arg_count < 1) es_fatal("check requires at least 1 argument");
+
+    LLVMValueRef cond = cg_expr(g, n->call.args[0]);
+    /* coerce to i1 */
+    if (LLVMGetTypeKind(LLVMTypeOf(cond)) != LLVMIntegerTypeKind || LLVMGetIntTypeWidth(LLVMTypeOf(cond)) != 1) {
+        cond = LLVMBuildICmp(g->bld, LLVMIntNE, cond, LLVMConstInt(LLVMTypeOf(cond), 0, false), "chk");
+    }
+
+    LLVMValueRef cur_fn = g->cur_fn;
+    LLVMBasicBlockRef fail_bb = LLVMAppendBasicBlockInContext(g->ctx, cur_fn, "chk_fail");
+    LLVMBasicBlockRef pass_bb = LLVMAppendBasicBlockInContext(g->ctx, cur_fn, "chk_pass");
+
+    LLVMBuildCondBr(g->bld, cond, pass_bb, fail_bb);
+
+    /* fail: print message and exit(1) */
+    LLVMPositionBuilderAtEnd(g->bld, fail_bb);
+    struct Symbol *printf_sym = sym_lookup(g, "printf");
+    struct Symbol *exit_sym = sym_lookup(g, "exit");
+    if (printf_sym) {
+        char msg[256];
+        snprintf(msg, sizeof(msg), "check failed at line %d\\n", n->line);
+        LLVMValueRef fmt = LLVMBuildGlobalStringPtr(g->bld, msg, "chk_msg");
+        LLVMValueRef pargs[1] = { fmt };
+        LLVMBuildCall2(g->bld, printf_sym->llvm_fn_type, printf_sym->value, pargs, 1, "");
+    }
+    if (exit_sym) {
+        LLVMValueRef eargs[1] = { LLVMConstInt(LLVMInt32TypeInContext(g->ctx), 1, false) };
+        LLVMBuildCall2(g->bld, exit_sym->llvm_fn_type, exit_sym->value, eargs, 1, "");
+    }
+    LLVMBuildUnreachable(g->bld);
+
+    /* pass: continue */
+    LLVMPositionBuilderAtEnd(g->bld, pass_bb);
+    n->type = type_basic(TY_VOID);
+    return LLVMConstInt(LLVMInt32TypeInContext(g->ctx), 0, false);
 }
 
 /* infer EsType from expression (call after cg_expr sets n->type) */
@@ -350,6 +626,45 @@ static EsType *infer_expr_type(CG *g, Node *n) {
     case ND_SIZEOF: return type_basic(TY_I64);
     case ND_STRUCT_INIT: return type_ptr(n->struct_init.stype);
     default: return type_basic(TY_I32);
+    }
+}
+
+/* Heuristic intent lowering:
+   treat `x := x + ...` as update instead of new shadow declaration. */
+static bool expr_mentions_ident(Node *n, const char *name) {
+    if (!n) return false;
+    switch (n->kind) {
+    case ND_IDENT:
+        return strcmp(n->ident.name, name) == 0;
+    case ND_BINARY:
+        return expr_mentions_ident(n->binary.left, name) ||
+               expr_mentions_ident(n->binary.right, name);
+    case ND_UNARY:
+        return expr_mentions_ident(n->unary.operand, name);
+    case ND_CALL:
+        if (expr_mentions_ident(n->call.callee, name)) return true;
+        for (int i = 0; i < n->call.arg_count; i++)
+            if (expr_mentions_ident(n->call.args[i], name)) return true;
+        return false;
+    case ND_FIELD:
+        return expr_mentions_ident(n->field.object, name);
+    case ND_INDEX:
+        return expr_mentions_ident(n->idx.object, name) ||
+               expr_mentions_ident(n->idx.index, name);
+    case ND_CAST:
+        return expr_mentions_ident(n->cast.expr, name);
+    case ND_TERNARY:
+        return expr_mentions_ident(n->ternary.cond, name) ||
+               expr_mentions_ident(n->ternary.then_expr, name) ||
+               expr_mentions_ident(n->ternary.else_expr, name);
+    case ND_STRUCT_INIT:
+        for (int i = 0; i < n->struct_init.field_count; i++)
+            if (expr_mentions_ident(n->struct_init.vals[i], name)) return true;
+        return false;
+    case ND_COMPTIME:
+        return expr_mentions_ident(n->comptime.expr, name);
+    default:
+        return false;
     }
 }
 
@@ -450,6 +765,12 @@ static LLVMValueRef cg_call(CG *g, Node *n) {
                 strcmp(callee->ident.name, "max") == 0) {
                 return cg_builtin_reduce(g, n, callee->ident.name);
             }
+            if (strcmp(callee->ident.name, "each") == 0) {
+                return cg_builtin_each(g, n);
+            }
+            if (strcmp(callee->ident.name, "check") == 0) {
+                return cg_builtin_check(g, n);
+            }
             es_fatal("undefined function '%s'", callee->ident.name);
         }
         /* function pointer variable: *fn(...) -> ret */
@@ -516,6 +837,15 @@ static LLVMValueRef cg_call(CG *g, Node *n) {
         args[a] = cg_expr(g, n->call.args[i]);
         if (a < param_count && sym->type && sym->type->fn.params[a])
             args[a] = coerce(g, args[a], es_to_llvm(g, sym->type->fn.params[a]));
+    }
+
+    /* arity check — catch wrong argument count before LLVM crashes */
+    if (sym->type && sym->type->kind == TY_FN) {
+        bool is_vararg = sym->type->fn.is_vararg;
+        if (!is_vararg && total_argc != param_count)
+            es_fatal("function '%s' expects %d arguments, got %d", sym->name, param_count, total_argc);
+        if (is_vararg && total_argc < param_count)
+            es_fatal("function '%s' requires at least %d arguments, got %d", sym->name, param_count, total_argc);
     }
 
     LLVMTypeRef ret_llvm = LLVMGetReturnType(fn_type);
@@ -796,12 +1126,28 @@ static LLVMValueRef cg_expr(CG *g, Node *n) {
         EsType *sty = n->struct_init.stype;
         StructDef *sd = struct_lookup(g, sty->strct.name);
         if (!sd) es_fatal("undefined struct '%s'", sty->strct.name);
-        /* malloc(sizeof(T)) */
+        /* calloc(1, sizeof(T)) — zero-init prevents uninitialized field bugs */
         LLVMValueRef sz = LLVMSizeOf(sd->llvm_type);
-        struct Symbol *mal = sym_lookup(g, "malloc");
-        if (!mal) es_fatal("struct init requires malloc (use std)");
-        LLVMValueRef args[1] = { sz };
-        LLVMValueRef ptr = LLVMBuildCall2(g->bld, mal->llvm_fn_type, mal->value, args, 1, "sinit");
+        struct Symbol *cal = sym_lookup(g, "calloc");
+        if (!cal) {
+            /* fallback to malloc if calloc not available */
+            struct Symbol *mal = sym_lookup(g, "malloc");
+            if (!mal) es_fatal("struct init requires malloc/calloc (use std)");
+            LLVMValueRef args[1] = { sz };
+            LLVMValueRef ptr_tmp = LLVMBuildCall2(g->bld, mal->llvm_fn_type, mal->value, args, 1, "sinit");
+            cal = NULL; /* signal to use ptr_tmp below */
+            /* can't zero-init without calloc, fall through */
+            (void)ptr_tmp;
+        }
+        LLVMValueRef ptr;
+        if (cal) {
+            LLVMValueRef cargs[2] = { LLVMConstInt(LLVMInt64TypeInContext(g->ctx), 1, false), sz };
+            ptr = LLVMBuildCall2(g->bld, cal->llvm_fn_type, cal->value, cargs, 2, "sinit");
+        } else {
+            struct Symbol *mal = sym_lookup(g, "malloc");
+            LLVMValueRef margs[1] = { sz };
+            ptr = LLVMBuildCall2(g->bld, mal->llvm_fn_type, mal->value, margs, 1, "sinit");
+        }
         /* store each field */
         for (int i = 0; i < n->struct_init.field_count; i++) {
             int fi = struct_field_index(sd, n->struct_init.fields[i]);
@@ -919,6 +1265,20 @@ static void cg_stmt(CG *g, Node *n) {
         break;
 
     case ND_DECL_STMT: {
+        /* intent lowering:
+           if `name := expr` references existing `name`, treat it as assignment
+           to avoid accidental shadowing from LLM output (x := x + 1). */
+        if (!n->decl.decl_type && n->decl.init &&
+            expr_mentions_ident(n->decl.init, n->decl.name)) {
+            struct Symbol *existing = sym_lookup(g, n->decl.name);
+            if (existing && existing->type && existing->type->kind != TY_FN) {
+                LLVMValueRef val = cg_expr(g, n->decl.init);
+                val = coerce(g, val, es_to_llvm(g, existing->type));
+                LLVMBuildStore(g->bld, val, existing->value);
+                break;
+            }
+        }
+
         EsType *ty = n->decl.decl_type;
         if (!ty && n->decl.init) {
             /* type inference: figure out type from init expression */
@@ -1181,7 +1541,7 @@ static void cg_stmt(CG *g, Node *n) {
     }
 
     case ND_DEFER:
-        assert(g->defer_count < 64);
+        if (g->defer_count >= 64) es_fatal("defer stack overflow (max 64 defers per function)");
         g->defers[g->defer_count++] = n->defer_stmt.body;
         break;
 
@@ -1200,7 +1560,7 @@ static void cg_st_decl(CG *g, Node *n) {
     /* skip duplicate struct declarations */
     if (struct_lookup(g, n->st.name)) return;
 
-    assert(g->struct_count < 128);
+    if (g->struct_count >= 128) es_fatal("struct table overflow (max 128 struct types)");
     StructDef *sd = &g->structs[g->struct_count++];
     sd->name = n->st.name;
     sd->field_count = n->st.field_count;

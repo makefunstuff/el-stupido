@@ -1,0 +1,62 @@
+# el-stupido declarative subset — GBNF grammar
+# For use with llama.cpp grammar-guided generation
+# Covers: one-liner fns, combinators, print, for loops, if/else, basic stmts
+#
+# This grammar makes syntax errors IMPOSSIBLE.
+# The model only makes semantic choices: names, numbers, expressions.
+
+root        ::= (declaration | statement | ws)*
+
+# --- declarations ---
+declaration ::= fn-decl | oneliner-decl
+
+fn-decl     ::= "fn " ident "(" params? ")" ws? block ws
+oneliner-decl ::= ident "(" params? ")" ws? "=" ws? expr ws
+
+params      ::= param ("," ws? param)*
+param       ::= ident (":" ws? type)?
+
+type        ::= "i32" | "i64" | "f32" | "f64" | "*u8" | "void"
+
+# --- statements ---
+statement   ::= decl-stmt | assign-stmt | for-stmt | while-stmt | if-stmt
+              | ret-stmt | print-stmt | expr-stmt
+
+decl-stmt   ::= ident ws? ":=" ws? expr ws
+assign-stmt ::= ident ws? ("=" | "+=" | "-=" | "*=") ws? expr ws
+for-stmt    ::= "for " ident " := " expr ".." "="? expr ws? block ws
+while-stmt  ::= "while " expr ws? block ws
+if-stmt     ::= "if " expr ws? block (ws? "else" ws? block)? ws
+ret-stmt    ::= "return " expr? ws
+print-stmt  ::= "print(" expr ")" ws
+expr-stmt   ::= expr ws
+
+block       ::= "{" ws? (statement)* "}"
+
+# --- expressions ---
+expr        ::= ternary
+ternary     ::= or-expr (ws? "?" ws? expr ws? ":" ws? expr)?
+or-expr     ::= and-expr (ws? "||" ws? and-expr)*
+and-expr    ::= cmp-expr (ws? "&&" ws? cmp-expr)*
+cmp-expr    ::= add-expr (ws? cmp-op ws? add-expr)?
+add-expr    ::= mul-expr (ws? [+-] ws? mul-expr)*
+mul-expr    ::= unary-expr (ws? [*/%] ws? unary-expr)*
+unary-expr  ::= "-" unary-expr | "!" unary-expr | call-expr
+call-expr   ::= primary (ws? "(" args? ")")*
+args        ::= expr ("," ws? expr)*
+
+primary     ::= number | string | range-expr | ident | "(" expr ")"
+range-expr  ::= number ".." "="? (number | ident)
+number      ::= [0-9]+
+string      ::= "\"" [^"]* "\""
+ident       ::= [a-zA-Z_] [a-zA-Z0-9_]*
+
+cmp-op      ::= "==" | "!=" | "<=" | ">=" | "<" | ">"
+
+# --- combinators (the expansion magic) ---
+# These are just function calls syntactically, but the compiler expands them:
+#   product(1..=n)  ->  accumulator loop with *=
+#   sum(1..=n)      ->  accumulator loop with +=
+#   print(f(1..=n)) ->  loop printing each f(i)
+
+ws          ::= [ \t\n]+

@@ -1,0 +1,15 @@
+{
+  "functions": [
+    {
+      "name": "sum_squares",
+      "params": "n: number",
+      "body": "let acc := 0;\nfor i := 1..=n do acc := acc + i * i;\nreturn acc"
+    },
+    {
+      "name": "main",
+      "params": "",
+      "body": "let sum_squares = sum_squares(100);\nprint(sum_squares)"
+    }
+  ],
+  "main_body": "let sum_squares = sum_squares(100);\nprint(sum_squares)"
+}

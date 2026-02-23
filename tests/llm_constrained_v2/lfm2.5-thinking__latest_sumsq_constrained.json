@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "sum_of_squares",
+      "params": "",
+      "body": "var acc = 0; for i := 1..=100 { acc += i * i }"
+    }
+  ],
+  "main_body": "Compute and print the sum of squares from 1 to 100."
+}

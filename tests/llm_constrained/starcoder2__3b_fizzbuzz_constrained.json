@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "main",
+      "params": "[]",
+      "body": "for i := 1..=30 { if (i % 5 == 0 && i % 3 == 0) { print(\"FizzBuzz\") } else if (i % 3 == 0) { print(\"Fizz\") } else if (i % 5 == 0) { print(\"Buzz\") } else { print(i) } }"
+    }
+  ],
+  "main_body": "for i := 1..=30 { if (i % 5 == 0 && i % 3 == 0) { print(\"FizzBuzz\") } else if (i % 3 == 0) { print(\"Fizz\") } else if (i % 5 == 0) { print(\"Buzz\") } else { print(i) } }"
+}

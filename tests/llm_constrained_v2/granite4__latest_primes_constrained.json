@@ -1,0 +1,4 @@
+{
+  "functions": [],
+  "main_body": "for i := 2..=50 {\n  is_prime := true\n  for j := 2; j < i; j++ {\n    if i % j == 0 {\n      is_prime = false\n      break\n    }\n  }\n  if is_prime {\n    print(i)\n  }\n}"
+}

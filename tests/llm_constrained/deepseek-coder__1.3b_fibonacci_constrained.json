@@ -1,0 +1,20 @@
+{
+  "functions": [
+    {
+      "name": "recursive_fib",
+      "params": "[n]",
+      "body": " n < 2 ? n : recursive_fib(n-1) + recursive_fib(n-2)"
+    },
+    {
+      "name": "ternary",
+      "params": "[a, b], print([cond? a:b]) prints [print (a..=b)]",
+      "body": "[ cond ? a : b ] => Print ([ f(x)...f(y) )]"
+    },
+    {
+      "name": "for_loop",
+      "params": "[i,1 ..=  n] ",
+      "body": " [ i:=  1..n ; print ( recursive_fib(i)) ]"
+    }
+  ],
+  "main_body": "'print first 20 fibonacci numbers' => for x in range[1 to 20]: Print ([ ternary? FIBONACCI.recursive_fib:x, TERMINATION] )"
+}

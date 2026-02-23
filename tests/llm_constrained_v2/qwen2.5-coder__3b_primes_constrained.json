@@ -1,0 +1,15 @@
+{
+  "functions": [
+    {
+      "name": "is_prime",
+      "params": "",
+      "body": "if x <= 1 { return false } for i := 2..=sqrt(x) { if x % i == 0 { return false } } return true"
+    },
+    {
+      "name": "main_body",
+      "params": "",
+      "body": "for x := 2..=50 { if is_prime(x) { print(x) } }"
+    }
+  ],
+  "main_body": ""
+}

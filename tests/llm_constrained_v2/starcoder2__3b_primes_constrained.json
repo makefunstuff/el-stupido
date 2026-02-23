@@ -1,0 +1,35 @@
+{
+  "functions": [
+    {
+      "name": "main",
+      "params": "[]",
+      "body": "for i := 2..=100 { if i % 3 == 0 && i % 5 != 0 { print(i); } }"
+    },
+    {
+      "name": "print",
+      "params": "[\"expr\"]",
+      "body": "print(expr);"
+    },
+    {
+      "name": "if_else",
+      "params": "[\"cond\", \"true_body\", \"false_body\"]",
+      "body": "if cond then true_body else false_body;"
+    },
+    {
+      "name": "while",
+      "params": "[\"cond\", \"body\"]",
+      "body": "while cond do body;"
+    },
+    {
+      "name": "for",
+      "params": "[\"i\", \"a\", \"b\", \"body\"]",
+      "body": "for i := a..=b { body; }"
+    },
+    {
+      "name": "break",
+      "params": "[]",
+      "body": "break;"
+    }
+  ],
+  "main_body": "main()"
+}

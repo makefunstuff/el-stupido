@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "fizzbuzz",
+      "params": "fizzbuzz",
+      "body": "fizzbuzz"
+    }
+  ],
+  "main_body": "fizzbuzz"
+}

@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {
+      "name": "main_body",
+      "params": "",
+      "body": "for i := 2..=49 { if is_prime(i) { print(i) } }"
+    }
+  ],
+  "main_body": "for i := 2..=49 { if is_prime(i) { print(i) } }"
+}

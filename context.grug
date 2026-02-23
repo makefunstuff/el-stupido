@@ -51,6 +51,12 @@
 🔑 examples 👉 ls examples/ && ls tools/
 🔑 grugmem 👉 grugmem dump
 
+📂 codebooks
+🔑 web 👉 use web — HTTP/WS server: listen/route/ws/crud/tpl/save (3-6 lines -> 400+ lines)
+🔑 cli 👉 use cli — CLI arg parser: name/desc/flag/arg -> struct Cli + main + help (7 lines -> 50 lines)
+🔑 rest 👉 use rest — JSON REST API: model/GET/POST -> HTTP+JSON+grug persistence (6 lines -> 120 lines)
+🔑 test 👉 use test — test runner: test "name" { assert EXPR } -> ANSI pass/fail (4 lines -> 60 lines)
+
 📂 tools
 🔑 grugmem 👉 KV store CLI (~33 LOC, uses 📥 grug)
 🔑 gruweb 👉 .grug → HTML+CSS+JS transpiler (~81 LOC, uses 📥 grug)

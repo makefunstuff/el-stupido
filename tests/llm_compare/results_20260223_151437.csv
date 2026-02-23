@@ -1,0 +1,11 @@
+timestamp,model,task,es_result,es_tokens,es_lines,py_result,py_tokens,py_lines
+20260223_151437,qwen2.5-coder:3b,factorial,PASS,12,3,WRONG,8,2
+20260223_151437,qwen2.5-coder:3b,fizzbuzz,PASS,50,8,PASS,34,9
+20260223_151437,qwen2.5-coder:3b,sumsq,FAIL,1,1,PASS,9,2
+20260223_151437,qwen2.5-coder:3b,fibonacci,FAIL,33,10,WRONG,46,13
+20260223_151437,qwen2.5-coder:3b,primes,FAIL,67,21,WRONG,46,13
+20260223_151437,qwen3:8b,factorial,PASS,4,2,PASS,12,4
+20260223_151437,qwen3:8b,fizzbuzz,PASS,49,1,PASS,34,9
+20260223_151437,qwen3:8b,sumsq,PASS,18,6,PASS,6,1
+20260223_151437,qwen3:8b,fibonacci,PASS,18,2,WRONG,18,5
+20260223_151437,qwen3:8b,primes,FAIL,47,15,PASS,33,11

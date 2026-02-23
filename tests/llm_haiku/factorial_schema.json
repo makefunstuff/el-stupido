@@ -1,0 +1,1 @@
+{"functions": [{"name": "fact", "params": "n", "body": "product(1..=n)"}], "main_body": "for i := 1..=12 { print(fact(i)) }"}

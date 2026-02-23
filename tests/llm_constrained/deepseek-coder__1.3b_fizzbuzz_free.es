@@ -1,0 +1,21 @@
+Here is a simple C program that implements your FizzBuzz task using the El Stupido Compiled Language (ESC): 
+#include <stdio.h>
+int main() {
+    for(i := 1..=30) { // For loop from i = 1 to n =  30, step size is automatically set by C language itself as it's an integer type in this case 4 bytes (on a typical system). This will print numbers on new line.
+        if((n % 5 == 0 && n % 3 != 0) || ((i%15==0))) { // If the number is divisible by both, ie., multiple of either Fizz or Buzz then it's printed as "FizzBuzz". Else only print numbers.
+            printf("Fizz\n");  
+        }  else if( n %3 == 0 ){   
+             // If the number is divisible by both, ie., multiple of either Fizz or Buzz then it's printed as "Fizz" and not a new line character. Else only print numbers on same lines with no space in between them for better readability 
+            printf("%d\n",i);   // Printing the number if divisible by both, ie., multiple of either Fizz or Buzz then it's printed as "Fizz" and not a new line character. Else only print numbers on same lines with no space in between them for better readability 
+        } else {   
+            printf("Buzz\n");   // If the number is divisible by both, ie., multiple of either Fizz or Buzz then it's printed as "Fizz" and not a new line character. Else only print numbers on same lines with no space in between them for better readability 
+        }   
+     };   // Ending the loop condition from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+    return 0;   // Returning the control to operating system, if there is no other operation then it's considered as successful execution and returns zero. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+} ```   // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero or greater then also it's handled by C language itself as integer type and automatically set. It will not cause any error but simply end up printing a lot of numbers on new line which can be avoided in normal programming scenario using while(1) loop instead
+  // Ending the main function body from here to avoid infinite loops if n is less than equal zero
