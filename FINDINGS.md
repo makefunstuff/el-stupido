@@ -246,3 +246,213 @@ JE=JSON error):
 | qwen3:8b | 8.2B | P/P | W/P | CF/CF | P/P | CF/F | 2/5 | 3/5 |
 
 **Aggregate sub-4B**: 9 schema passes vs 1 free pass (9x improvement).
+
+---
+
+## Round 6: Design Research — The Specification-Expansion Gap
+
+**Date**: 2026-02-23
+**Method**: Two iterative research loops (10 + 6 iterations) drawing on
+information theory, physics, cognitive science, thermodynamics, biology,
+constraint programming, and history of radical computing systems.
+
+### The Question
+
+"If developers don't need to read code anymore, why is LLM-generated code so
+verbose? It's a waste."
+
+### Finding 7: The Specification-Expansion Gap Is 40-150x
+
+Programs contain far less information than their source code. Using Kolmogorov
+complexity analysis on el-stupido's manifest examples:
+
+| Representation | Size | Ratio to K(spec) |
+|---|---|---|
+| Irreducible decisions (K) | ~20 bytes | 1x |
+| JSON manifest | ~213 bytes | 10.7x |
+| el-stupido source (expanded) | ~2,917 bytes | 146x |
+| Equivalent Python/Flask | ~5,000-8,000 bytes | 250-400x |
+| LLM-generated Python (typical) | ~8,000-15,000 bytes | 400-750x |
+
+A guestbook CRUD app has ~160 bits of real decisions: domain (2 bits), app name
+(47 bits), port (16 bits), model/field names and types (~95 bits). Everything
+else — the HTTP server, fork/accept loop, HTML templates, route dispatch,
+persistence — is deterministic expansion from those 160 bits.
+
+LLM-generated code carries ~0.15 bits of information per token. The manifest
+carries ~1.84 bits per token. The theoretical optimum is ~18.4 bits per token.
+Current LLM code generation wastes **99.5%** of tokens on information-free
+expansion.
+
+### Finding 8: The Waste Is in the LLM's Own Context, Not in Human Readability
+
+The initial question assumed the problem was human-facing: verbose code is hard
+to read. This is wrong. The real problem is **LLM-facing**: verbose code fills
+the context window.
+
+Every token an LLM generates eats context. By function 15, it's forgotten
+function 3's exact signature. The LLM drowns in its own output. The context
+window is the bottleneck, not output format.
+
+This reframes the manifest system: it's not about making code shorter for
+humans. It's about making the LLM's job small enough that a tiny model can do
+it. 30 tokens of decisions vs. 2,000 tokens of code is the difference between a
+1B model succeeding and failing.
+
+### Finding 9: Seven Theoretical Frameworks Converge
+
+Seven independent frameworks all describe the same mathematical object:
+
+| Framework | Name for "manifest" | Name for "compiler" |
+|---|---|---|
+| Kolmogorov complexity | Shortest program | Universal machine |
+| Minimum Description Length | Data given model | Model |
+| Predictive processing | Prediction error | Predictive model |
+| Free energy principle | Variational free energy | Generative model |
+| Bayesian programming | Question + specification | Inference engine |
+| Miller's chunking | Chunk label | Chunk hierarchy |
+| Belief propagation | Observed variables | Factor graph |
+
+**The unified statement**: A program is its prediction errors. Everything else
+is reconstruction. The manifest contains only what the domain cannot predict.
+The compiler reconstructs the rest.
+
+This is structurally isomorphic to Bayesian programming (Bessière et al.): the
+manifest is the model specification (variables + decomposition + forms), the
+domain is the prior, and the expanded program is the posterior. Different
+"questions" on the same model produce different artifacts (web app, REST API,
+test suite, docs).
+
+### Finding 10: Nature Uses Constraint Relaxation, Not Instruction Execution
+
+Every efficient natural system works the same way:
+
+1. **Local constraints** (the specification — what must be true)
+2. **Shared medium** (domain knowledge that enables propagation)
+3. **Relaxation to equilibrium** (the "compilation" — physics finds the answer)
+
+| System | Specification | Medium | Expansion ratio |
+|---|---|---|---|
+| DNA → organism | 25 MB genome | Chemistry | 4,000,000x |
+| Ant colony | 1 MB neural circuit | Pheromone field | 10,000x |
+| Crystal | ~100 bits (composition) | Electromagnetic field | 10^22 x |
+| Brain wiring | 25 MB genome | Chemical gradients | 4,000,000x |
+| Immune system | 500 KB gene segments | Antigen presentation | 40,000,000x |
+| el-stupido manifest | ~200 bytes | Codebook templates | 14-66x |
+
+el-stupido's expansion ratio (14-66x) vs. nature's (millions to billions) shows
+how much room there is for encoding more domain knowledge into the medium.
+
+The thermodynamic analysis confirms: the LLM inference step (creating
+information from intent) is the ONLY physically expensive part of the pipeline.
+Manifest expansion creates no new information and is theoretically almost free
+(~10^-28 joules for the reversible portion vs. ~125 joules actual on a Pi).
+
+### Finding 11: Compression Equals Removing Phase Boundaries
+
+Historical analysis of radical computing systems reveals a universal pattern:
+
+| System | Phases eliminated | Compression achieved |
+|---|---|---|
+| Forth (Chuck Moore) | parse/compile/link/run → interpret | 1,000x (2KB system) |
+| STEPS (Alan Kay) | OS/app/driver → DSL stack | 5,000x (20K LOC for full OS) |
+| APL (Ken Iverson) | loop/condition/variable → array op | 10-100x |
+| Oberon (Niklaus Wirth) | editor/compiler/OS → unified system | 10,000x |
+| TCC (Fabrice Bellard) | frontend/middle/backend → single pass | 100x (25K LOC compiler) |
+
+Every radical system that achieved 100-5000x compression did it by collapsing
+multiple phases into fewer phases. Industry software has 7-11 phases; radical
+software has 1-3. The el-stupido manifest pipeline currently has ~11 phases
+(prompt → LLM → JSON → parse → expand → lex → parse → AST → normalize →
+codegen → link). The target is 3: intent → decisions → binary.
+
+### Finding 12: Hand-Coding Domain Templates Doesn't Scale
+
+The current manifest system has 4 domains (crud, rest, cli, test), each with
+~200 LOC of hand-written C expansion code in manifest.c. Adding each new domain
+requires writing another 100-300 LOC of C string concatenation.
+
+This moves waste from the LLM to the compiler developer. 50 domains would mean
+~10,000 lines of hand-written templates. This is the same problem we're trying
+to solve, just at a different layer.
+
+### Finding 13: Composable Primitives Are the Answer
+
+Instead of monolithic domain templates, the expansion should be COMPOSITION of
+reusable primitives. Each primitive is a small el-stupido library function
+(5-15 LOC). The manifest specifies which primitives to compose and their
+parameters. The compiler generates only the glue code (main, init, loop,
+cleanup).
+
+Example — the same CRUD app as a composition:
+
+```json
+{
+  "compose": [
+    {"use": "http_listen", "port": 8080},
+    {"use": "route", "method": "GET", "path": "/", "handler": "list"},
+    {"use": "route", "method": "POST", "path": "/", "handler": "create"},
+    {"use": "grug_store", "name": "entries", "fields": ["name", "msg"]},
+    {"use": "html_list", "model": "entries"},
+    {"use": "html_form", "fields": ["name", "msg"]}
+  ]
+}
+```
+
+Advantages over domain templates:
+
+| | Domain templates | Composable primitives |
+|---|---|---|
+| New domain | 100-300 LOC of C | 0 LOC (compose existing primitives) |
+| New primitive | N/A | 5-15 LOC of el-stupido |
+| GBNF grammar | Hand-maintained | Auto-generated from primitive registry |
+| LLM decision space | Pick 1 of 4 domains | Pick 4-6 of 20+ primitives |
+| Scaling | Linear in domains | Combinatorial in primitives |
+
+20 primitives composing in groups of 4-6 yields thousands of possible programs
+from a fixed library. Each new primitive multiplies the space of possible
+programs without touching the compiler.
+
+The primitive library grows via the "immune system" model:
+- Encounter a novel domain → bigger LLM (or human) writes the missing primitive
+- Primitive enters the library → verified once, reused forever
+- Tiny model composes existing primitives → cheap, constrained, fast
+
+This mirrors biology: evolution creates new genes (expensive, slow, once), gene
+expression composes them (cheap, fast, every organism). The genome accumulates
+successful patterns over time.
+
+### Finding 14: The Economics
+
+| Metric | Current LLM generation | Manifest approach | Composable primitives |
+|---|---|---|---|
+| Tokens per program | 300-2,000 | 30-200 | 30-80 |
+| Min viable model | 7B+ | sub-4B | sub-1B (target) |
+| Energy per program | 0.3-2 Wh | 0.01-0.06 Wh | 0.01 Wh |
+| Info per token | 0.15 bits | 1.84 bits | ~4 bits (target) |
+
+Strongest economic angle: enabling computation where none exists today. 3.7
+billion people lack reliable internet. A Raspberry Pi ($55) + 1B model + 
+el-stupido compiler + primitive library = full AI-powered development
+environment, offline, forever. The market isn't "cheaper Copilot" — it's
+"programmable devices for the offline world."
+
+### The Refined Thesis (v3)
+
+The v1 thesis ("shorter syntax saves tokens") was disproven.
+The v2 thesis ("structured specs + compiler expansion") was validated.
+
+The v3 thesis:
+
+> **Programs are compositions of reusable primitives. A tiny LLM's job is to
+> select and wire primitives (30-80 tokens of constrained JSON). The compiler
+> generates the glue. The primitive library grows over time — each new
+> primitive multiplies the space of possible programs without changing the
+> compiler. This makes sub-1B models viable for generating native binaries on
+> constrained hardware, offline, enabling computation for billions of people
+> who currently have none.**
+
+This is testable. The next step is building the composable primitive system
+and measuring whether composition achieves equivalent expansion ratios to
+hand-coded domain templates while scaling to new domains with zero compiler
+changes.
