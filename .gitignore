@@ -1,5 +1,5 @@
 # Rust build artifacts
-compiler/target/
+**/target/
 
 # compiled binaries
 a.out
