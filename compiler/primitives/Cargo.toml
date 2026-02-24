@@ -1,0 +1,5 @@
+[package]
+name = "primitives"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable building blocks for el-stupido compositions"

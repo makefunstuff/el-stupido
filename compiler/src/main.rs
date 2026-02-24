@@ -28,7 +28,7 @@ enum Cmd {
         #[arg(short, long, default_value = "a.out")]
         output: String,
     },
-    /// Print generated C source without compiling
+    /// Print generated Rust source without compiling
     Expand {
         /// Path to composition manifest (JSON)
         manifest: String,
@@ -61,19 +61,29 @@ fn main() {
                 }
             };
 
-            let c_source = emit::emit_c(&comp);
+            let rust_source = emit::emit_rust(&comp);
 
             // Write to temp file
-            let tmp = format!("/tmp/esc_{}.c", std::process::id());
+            let tmp = format!("/tmp/esc_{}.rs", std::process::id());
             {
                 let mut f = fs::File::create(&tmp).expect("cannot create temp file");
-                f.write_all(c_source.as_bytes())
+                f.write_all(rust_source.as_bytes())
                     .expect("cannot write temp file");
             }
 
-            // Compile with cc
-            let status = Command::new("cc")
-                .args(["-O2", "-o", &output, &tmp])
+            // Compile with rustc
+            let status = Command::new("rustc")
+                .args([
+                    "--edition",
+                    "2021",
+                    "-C",
+                    "opt-level=2",
+                    "-C",
+                    "strip=symbols",
+                    "-o",
+                    &output,
+                    &tmp,
+                ])
                 .status();
 
             // Clean up temp file
@@ -83,18 +93,18 @@ fn main() {
                 Ok(s) if s.success() => {
                     let meta = fs::metadata(&output).ok();
                     let size = meta.map(|m| m.len()).unwrap_or(0);
-                    let c_len = c_source.len();
+                    let rs_len = rust_source.len();
                     eprintln!(
-                        "ok: {} -> {output} ({c_len} bytes C -> {size} bytes binary)",
+                        "ok: {} -> {output} ({rs_len} bytes Rust -> {size} bytes binary)",
                         manifest
                     );
                 }
                 Ok(s) => {
-                    eprintln!("error: cc exited with {s}");
+                    eprintln!("error: rustc exited with {s}");
                     std::process::exit(1);
                 }
                 Err(e) => {
-                    eprintln!("error: cannot run cc: {e}");
+                    eprintln!("error: cannot run rustc: {e}");
                     std::process::exit(1);
                 }
             }
@@ -117,7 +127,7 @@ fn main() {
                 }
             };
 
-            print!("{}", emit::emit_c(&comp));
+            print!("{}", emit::emit_rust(&comp));
         }
 
         Cmd::Grammar => {
