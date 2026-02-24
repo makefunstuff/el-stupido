@@ -1,23 +1,9 @@
-# build artifacts
-esc
-*.o
-*.d
-*.out
-*.wasm
+# Rust build artifacts
+compiler/target/
 
-# compiled example binaries
+# compiled binaries
 a.out
-hello
-server
-linked_list
-primes
-macros
-grugbook
-grugmem
-grugweb
-gruweb
-snake_server
-invaders_server
+*.out
 
 # runtime data
 *.grug

@@ -1,94 +1,48 @@
 # el-stupido project manifest
-# 📂 mem values are shell commands — run one for on-demand context
+# composable primitives compiler — tiny LLMs emit JSON, compiler wires building blocks
 
-📂 project
-🔑 name 👉 el-stupido
-🔑 desc 👉 decision-manifest compiler: LLMs emit decisions, compiler does the rest
-🔑 bin 👉 esc
-🔑 ext 👉 .es
-🔑 build 👉 make
-🔑 run 👉 ./esc input.es -o out [-O2] [--wasm]
+[project]
+name = el-stupido
+desc = composable primitives compiler: LLMs pick+wire reusable blocks, compiler generates glue
+bin = esc
+lang = Rust
+build = cd compiler && cargo build
+run = ./compiler/target/debug/esc <subcommand>
 
-📂 manifest
-🔑 core 👉 LLMs emit 30-80 tokens of JSON decisions, compiler expands deterministically
-🔑 compile 👉 ./esc --manifest app.json -o app — JSON manifest -> native binary
-🔑 expand 👉 ./esc --manifest-expand app.json — print expanded el-stupido source
-🔑 grammar 👉 ./esc --manifest-grammar — print GBNF grammar for constrained LLM output
-🔑 generate 👉 ./esc --generate prompt.txt --llm model.gguf -o app (needs LLAMA=1)
-🔑 domains 👉 crud (CRUD web app), rest (JSON API), cli (CLI tool), test (test runner)
-🔑 schema 👉 spec/manifest.json — JSON schema for decision manifests
-🔑 src 👉 src/manifest.h src/manifest.c — parser, expander, GBNF grammar
-🔑 ratios 👉 crud 17x, rest 14x, wardrobe 14x (from JSON manifest to el-stupido source)
+[architecture]
+pipeline = JSON manifest -> validate -> emit C -> cc -> native binary
+thesis = programs are compositions of reusable primitives (30-80 tokens of constrained JSON)
+primitives = small reusable building blocks (5-15 LOC each), LLM picks and wires them
+library = grows over time; each new primitive multiplies possible programs without changing compiler
 
-📂 lang
-🔑 pipeline 👉 lexer -> parser -> AST -> LLVM codegen -> cc link (or wasm-ld for --wasm)
-🔑 features 👉 emoji kw/types/stdlib, structs, ptrs, UFCS, ✨/🗑 mem, ⚡comptime, 🔩asm, 📎macros
-🔑 new_features 👉 ➰for, 🎯match, 🏷enum, 🔜defer, fn ptrs, struct init ✨T{}, short-circuit &&/||
-🔑 std 👉 lib/std.es auto-loaded, no import needed
-🔑 llvm 👉 opaque ptrs: Load2/GEP2/Call2 need explicit type, PointerType(ctx,0)
-🔑 short_circuit 👉 && and || are short-circuit (phi nodes), safe for null guards
-🔑 macros 👉 ⚡ NAME(p) 👉 body — unified with comptime, 👉 = macro def, no 👉 = eval
-🔑 kw_fixed 👉 v/st/sz removed as ASCII keywords — use ⬛/📦/📏 emoji versions
-🔑 unsigned 👉 🔵(u32)/💎(u64) now use UDiv/URem/LShr/unsigned comparisons
-🔑 ptr_diff 👉 ptr - ptr yields i64 integer via ptrtoint subtraction
+[subcommands]
+compose = JSON manifest -> validate -> emit C -> compile -> binary
+expand = JSON manifest -> print generated C source
+grammar = print GBNF grammar for constrained LLM output
+primitives = list all available primitives with params/provides/requires
 
-📂 syntax_quick
-🔑 for_loop 👉 ➰ i := 0..10 { body }
-🔑 match 👉 🎯 expr { val { body } _ { default } }
-🔑 enum 👉 🏷 Name { A; B; C=5; D }
-🔑 struct_init 👉 p := ✨ T { field: val, ... }
-🔑 fn_ptr_type 👉 *🔧(🔢,🔢)->🔢
-🔑 defer 👉 🔜 stmt — runs in reverse at function return
-🔑 import 👉 📥 name — loads lib/<name>.es
+[primitives]
+http_listen = HTTP server with fork-per-connection (port:u16) -> provides:server
+route = HTTP route handler (method:str, path:str, handler:str) -> requires:server
+grug_store = persistent key-value storage (name:str, fields:str[]) -> provides:persistence
+html_list = HTML table listing entries (model:str) -> requires:persistence,server
+html_form = HTML form for creating entries (fields:str[]) -> requires:server
+json_respond = JSON API response (model:str) -> requires:persistence,server
+gpio_read = read GPIO pin (pin:u16) -> provides:sensor
+gpio_write = write GPIO pin (pin:u16) -> provides:actuator
+threshold = compare sensor and trigger action (source:str, above:f64, action:str) -> requires:sensor
+timer_loop = periodic execution loop (interval_ms:u64) -> provides:loop
 
-📂 preludes
-🔑 std 👉 lib/std.es — libc externs (printf,malloc,socket,fork,math,...) auto-loaded
-🔑 grug 👉 lib/grug.es — .grug CRUD (parse/query/mutate/write/free), ~120 LOC
-🔑 str 👉 lib/str.es — string builder: str_new/str_add/str_addc/str_fmt/str_get/str_len/str_clear/str_fr
-🔑 vec 👉 lib/vec.es — dynamic array (void* elems): vec_new/vec_push/vec_get/vec_pop/vec_len/vec_fr
-🔑 map 👉 lib/map.es — string->string hashmap: map_new/map_set/map_get/map_del/map_len/map_fr
-🔑 http 👉 lib/http.es — HTTP server: http_listen/http_resp/http_send/http_path/http_fval/http_hesc/http_udec
-🔑 ws 👉 lib/ws.es — WebSocket server (RFC 6455): sha1/b64_enc/ws_handshake/ws_read/ws_send/ws_text/ws_close
-🔑 gl 👉 lib/gl.es — WebGL bridge imports for WASM: gl_clear/gl_rect/js_random
-🔑 wasm 👉 lib/wasm.es — WASM freestanding helpers: walloc/wstrlen/wstrcpy/wmemcpy/itoa_buf
+[source]
+main = compiler/src/main.rs (CLI entry point, 4 subcommands)
+primitive = compiler/src/primitive.rs (Primitive/ParamDef types, Registry with 10 builtins)
+compose = compiler/src/compose.rs (Manifest JSON parsing, validation -> ValidComposition)
+emit = compiler/src/emit.rs (C code emitter: grug impl, HTTP server, handlers, dispatch, main)
+grammar = compiler/src/grammar.rs (GBNF grammar auto-generation from registry)
 
-📂 mem
-🔑 emoji_kw 👉 sed -n '/^static TokenKind check_emoji/,/^}/p' src/lexer.c
-🔑 emoji_fn 👉 sed -n '/^static const char \*check_emoji_fn/,/^}/p' src/lexer.c
-🔑 tokens 👉 grep TOK_ src/lexer.h
-🔑 ast 👉 grep -E 'ND_|ES_TY' src/ast.h
-🔑 syntax 👉 cat spec/grammar.peg
-🔑 std 👉 cat lib/std.es
-🔑 examples 👉 ls examples/ && ls tools/
-🔑 grugmem 👉 grugmem dump
-🔑 manifest 👉 cat spec/manifest.json
+[examples]
+guestbook = examples/compose_guestbook.json (7 primitives: http+routes+grug+html_list+html_form)
 
-📂 codebooks
-🔑 web 👉 use web — HTTP/WS server: listen/route/ws/crud/tpl/save (3-6 lines -> 400+ lines)
-🔑 cli 👉 use cli — CLI arg parser: name/desc/flag/arg -> struct Cli + main + help (7 lines -> 50 lines)
-🔑 rest 👉 use rest — JSON REST API: model/GET/POST -> HTTP+JSON+grug persistence (6 lines -> 120 lines)
-🔑 test 👉 use test — test runner: test "name" { assert EXPR } -> ANSI pass/fail (4 lines -> 60 lines)
-
-📂 tools
-🔑 grugmem 👉 KV store CLI (~33 LOC, uses 📥 grug)
-🔑 gruweb 👉 .grug → HTML+CSS+JS transpiler (~81 LOC, uses 📥 grug)
-🔑 grugbook 👉 guestbook web app: fork-per-conn HTTP, .grug persistence (~100 LOC, uses 📥 grug)
-🔑 snake 👉 WebGL snake game: WASM game logic + native HTTP server (~100+40 LOC)
-
-📂 llm
-🔑 build 👉 make LLAMA=1 — links llama.cpp, adds --llm and --generate flags (~5MB binary)
-🔑 old_usage 👉 ./esc --llm model.gguf input.txt -o out — LLM generates codebook from input
-🔑 new_usage 👉 ./esc --generate prompt.txt --llm model.gguf -o app — LLM -> manifest -> compile
-🔑 flags 👉 --llm <path> --llm-raw --llm-grammar --generate <prompt>
-🔑 grammar 👉 GBNF constrains LLM to valid manifest JSON (30-80 tokens)
-🔑 src 👉 src/llm.c src/llm.h — wraps llama.cpp C API (load/generate/free)
-🔑 dep 👉 deps/llama.cpp (git submodule) — static libs, CPU-only, no GPU needed
-🔑 pipeline 👉 prompt -> LLM (GBNF constrained) -> JSON manifest -> expand -> compile
-
-📂 wasm
-🔑 compile 👉 ./esc prog.es --wasm -o prog.wasm (skips std.es, uses wasm-ld)
-🔑 no_std 👉 --wasm skips auto-loading lib/std.es (libc not available in WASM)
-🔑 imports 👉 🔌 extern decls become WASM imports (JS provides via env object)
-🔑 exports 👉 all 🔧 functions exported, callable from JS
-🔑 memory 👉 linear memory exported, 1MB initial, 16MB max
-🔑 freestanding 👉 no libc — use lib/gl.es or lib/wasm.es for helpers
+[notes]
+readme = DO NOT MODIFY README.md (human-written)
+old_code = all old C source/libs/tools/specs deleted, project is Rust-only now

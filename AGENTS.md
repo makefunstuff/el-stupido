@@ -1,3 +1,9 @@
-Read `context.grug` for project context. Emoji tables are in `src/lexer.c`.
+Read `context.grug` for project context.
 
-The `📂 mem` section contains shell commands. Run one to get detailed context on that topic without loading everything.
+Build: `cd compiler && cargo build`
+Run: `./compiler/target/debug/esc <subcommand>`
+Test: `./compiler/target/debug/esc compose examples/compose_guestbook.json -o /tmp/guestbook && /tmp/guestbook`
+
+Subcommands: compose, expand, grammar, primitives
+
+Do NOT modify README.md — it's human-written.

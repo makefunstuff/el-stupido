@@ -1,0 +1,12 @@
+{
+  "app": "guestbook",
+  "compose": [
+    {"use": "http_listen", "port": 8080},
+    {"use": "route", "method": "GET", "path": "/", "handler": "handle_list_entries"},
+    {"use": "route", "method": "POST", "path": "/", "handler": "entries_create"},
+    {"use": "route", "method": "GET", "path": "/delete", "handler": "entries_delete"},
+    {"use": "grug_store", "name": "entries", "fields": ["name", "msg"]},
+    {"use": "html_list", "model": "entries"},
+    {"use": "html_form", "fields": ["name", "msg"]}
+  ]
+}
