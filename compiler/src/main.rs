@@ -183,6 +183,9 @@ fn main() {
 
             if store {
                 if let Some(cached) = cache::lookup(&hash) {
+                    // Bump use_count in memory on cache hit
+                    memory::touch(&hash);
+
                     if machine {
                         let (inputs, outputs) = compose::extract_io_contract(&comp);
                         let result = serde_json::json!({
@@ -260,7 +263,7 @@ fn main() {
                         f.write_all(b"ESCMETA\0").expect("cannot write trailer magic");
                     }
 
-                    // Store in cache if requested
+                    // Store in cache and auto-record to memory
                     if store {
                         cache::register(&cache::CachedTool {
                             hash: hash.clone(),
@@ -274,6 +277,20 @@ fn main() {
                             binary_size,
                             rust_size: rs_len as u64,
                         });
+
+                        // Auto-record to memory graph
+                        let pattern = memory::extract_pattern(&comp.nodes);
+                        let io = memory::io_signature(&inputs, &outputs);
+                        memory::record(
+                            &hash,
+                            &comp.app,
+                            "",  // goal — agent fills this later via `esc memory record`
+                            &[],
+                            &pattern,
+                            &io,
+                            &comp.capabilities,
+                            "",
+                        );
                     }
 
                     if machine {
