@@ -10,38 +10,52 @@ build = cd compiler && cargo build
 run = ./compiler/target/debug/esc <subcommand>
 
 [architecture]
-pipeline = JSON manifest -> validate -> emit C -> cc -> native binary
-thesis = programs are compositions of reusable primitives (30-80 tokens of constrained JSON)
-primitives = small reusable building blocks (5-15 LOC each), LLM picks and wires them
-library = grows over time; each new primitive multiplies possible programs without changing compiler
+pipeline = JSON graph manifest -> validate (types + binds + effect capabilities) -> emit Rust -> rustc -> native binary
+thesis = machine-first compiled IR for constrained LLM output, not a human language and not a domain framework
+primitives = core compute/io/fs building blocks with typed params, typed binds, capabilities, and effects
+library = grows over time; domain packs can be layered outside core compiler
 
 [subcommands]
-compose = JSON manifest -> validate -> emit C -> compile -> binary
-expand = JSON manifest -> print generated C source
+compose = JSON manifest -> validate -> emit Rust -> compile -> binary
+expand = JSON manifest -> print generated Rust source
 grammar = print GBNF grammar for constrained LLM output
-primitives = list all available primitives with params/provides/requires
+primitives = list all available primitives with params/binds/provides/requires/effects
 
 [primitives]
-http_listen = HTTP server with fork-per-connection (port:u16) -> provides:server
-route = HTTP route handler (method:str, path:str, handler:str) -> requires:server
-grug_store = persistent key-value storage (name:str, fields:str[]) -> provides:persistence
-html_list = HTML table listing entries (model:str) -> requires:persistence,server
-html_form = HTML form for creating entries (fields:str[]) -> requires:server
-json_respond = JSON API response (model:str) -> requires:persistence,server
-gpio_read = read GPIO pin (pin:u16) -> provides:sensor
-gpio_write = write GPIO pin (pin:u16) -> provides:actuator
-threshold = compare sensor and trigger action (source:str, above:f64, action:str) -> requires:sensor
-timer_loop = periodic execution loop (interval_ms:u64) -> provides:loop
+const_num = numeric constant (value:f64) -> provides:num effects:pure
+const_str = string constant (value:str) -> provides:str effects:pure
+add/sub/mul/div = arithmetic (bind lhs:num, rhs:num) -> provides:num effects:pure
+gt/eq_num = comparisons (bind lhs:num, rhs:num) -> provides:bool effects:pure
+and_bool/or_bool/not_bool = boolean logic (bind bool inputs) -> provides:bool effects:pure
+select_num/select_str = branchless select (bind cond:bool + typed branches) -> provides:num|str effects:pure
+repeat_str = bounded string repetition (bind text:str, times:num) -> provides:str effects:pure
+to_string = numeric formatting (bind value:num) -> provides:str effects:pure
+concat = string concatenation (bind left:str, right:str) -> provides:str effects:pure
+len_str = string length (bind text:str) -> provides:num effects:pure
+cwd = current working directory -> provides:str effects:pure
+path_join = path concatenation (bind left:str, right:str) -> provides:str effects:pure
+read_stdin = stdin line read (prompt?:str) -> provides:str effects:io_read,io_write
+parse_num = string to f64 (bind text:str) -> provides:num effects:pure
+read_file = file read (path:str) -> provides:str effects:fs_read
+read_file_dyn = file read (bind path:str) -> provides:str effects:fs_read
+write_file = file write (path:str, bind content:str) -> provides:sink effects:fs_write
+write_file_dyn = file write (bind path:str, bind content:str) -> provides:sink effects:fs_write
+print_num = stdout print number (bind value:num) -> provides:sink effects:io_write
+print_str = stdout print string (bind value:str) -> provides:sink effects:io_write
 
 [source]
 main = compiler/src/main.rs (CLI entry point, 4 subcommands)
-primitive = compiler/src/primitive.rs (Primitive/ParamDef types, Registry with 10 builtins)
-compose = compiler/src/compose.rs (Manifest JSON parsing, validation -> ValidComposition)
-emit = compiler/src/emit.rs (C code emitter: grug impl, HTTP server, handlers, dispatch, main)
+primitive = compiler/src/primitive.rs (Primitive/ParamDef/BindDef/effects, Registry with builtins)
+compose = compiler/src/compose.rs (graph manifest parsing + typed validation + capability safety)
+emit = compiler/src/emit.rs (Rust code emitter from validated graph, core primitives only)
 grammar = compiler/src/grammar.rs (GBNF grammar auto-generation from registry)
 
 [examples]
-guestbook = examples/compose_guestbook.json (7 primitives: http+routes+grug+html_list+html_form)
+sum = examples/compose_sum.json (pure arithmetic + stdout)
+prompt_double = examples/compose_prompt_double.json (stdin + parse + arithmetic + stdout)
+file_report = examples/compose_file_report.json (file read + string length + stdout)
+branch_repeat = examples/compose_branch_repeat.json (boolean logic + select + bounded repeat)
+dynamic_path = examples/compose_dynamic_path.json (cwd + path_join + dynamic file read)
 
 [notes]
 readme = DO NOT MODIFY README.md (human-written)

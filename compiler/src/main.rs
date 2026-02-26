@@ -6,6 +6,7 @@ mod primitive;
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Parser)]
@@ -63,30 +64,27 @@ fn main() {
 
             let rust_source = emit::emit_rust(&comp);
 
-            // Write to temp file
-            let tmp = format!("/tmp/esc_{}.rs", std::process::id());
+            let output_path = Path::new(&output);
+            let tmp_parent = output_path.parent().unwrap_or_else(|| Path::new("."));
+            let tmp = tmp_parent.join(format!("esc_{}_tmp.rs", std::process::id()));
             {
                 let mut f = fs::File::create(&tmp).expect("cannot create temp file");
                 f.write_all(rust_source.as_bytes())
                     .expect("cannot write temp file");
             }
 
-            // Compile with rustc
             let status = Command::new("rustc")
-                .args([
-                    "--edition",
-                    "2021",
-                    "-C",
-                    "opt-level=2",
-                    "-C",
-                    "strip=symbols",
-                    "-o",
-                    &output,
-                    &tmp,
-                ])
+                .arg("--edition")
+                .arg("2021")
+                .arg("-C")
+                .arg("opt-level=2")
+                .arg("-C")
+                .arg("strip=symbols")
+                .arg("-o")
+                .arg(&output)
+                .arg(&tmp)
                 .status();
 
-            // Clean up temp file
             let _ = fs::remove_file(&tmp);
 
             match status {
@@ -147,11 +145,22 @@ fn main() {
                     };
                     println!("    {}: {} ({})", param.name, param.ty.label(), req);
                 }
+                for bind in &p.binds {
+                    let req = if bind.required {
+                        "required"
+                    } else {
+                        "optional"
+                    };
+                    println!("    bind {} -> {} ({})", bind.name, bind.capability, req);
+                }
                 if !p.provides.is_empty() {
                     println!("    provides: [{}]", p.provides.join(", "));
                 }
                 if !p.requires.is_empty() {
                     println!("    requires: [{}]", p.requires.join(", "));
+                }
+                if !p.effects.is_empty() {
+                    println!("    effects: [{}]", p.effects.join(", "));
                 }
                 println!();
             }

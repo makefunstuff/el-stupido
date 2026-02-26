@@ -1,0 +1,15 @@
+{
+  "app": "dynamic-path",
+  "capabilities": ["fs_read", "io_write"],
+  "nodes": [
+    {"id": "cwd", "use": "cwd"},
+    {"id": "name", "use": "const_str", "params": {"value": "context.grug"}},
+    {"id": "path", "use": "path_join", "bind": {"left": "cwd", "right": "name"}},
+    {"id": "content", "use": "read_file_dyn", "bind": {"path": "path"}},
+    {"id": "size", "use": "len_str", "bind": {"text": "content"}},
+    {"id": "prefix", "use": "const_str", "params": {"value": "chars via dynamic path = "}},
+    {"id": "size_str", "use": "to_string", "bind": {"value": "size"}},
+    {"id": "msg", "use": "concat", "bind": {"left": "prefix", "right": "size_str"}},
+    {"id": "out", "use": "print_str", "bind": {"value": "msg"}}
+  ]
+}

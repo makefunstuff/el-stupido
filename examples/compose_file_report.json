@@ -1,0 +1,12 @@
+{
+  "app": "file-report",
+  "capabilities": ["fs_read", "io_write"],
+  "nodes": [
+    {"id": "content", "use": "read_file", "params": {"path": "context.grug"}},
+    {"id": "size", "use": "len_str", "bind": {"text": "content"}},
+    {"id": "prefix", "use": "const_str", "params": {"value": "context.grug chars = "}},
+    {"id": "size_str", "use": "to_string", "bind": {"value": "size"}},
+    {"id": "msg", "use": "concat", "bind": {"left": "prefix", "right": "size_str"}},
+    {"id": "out", "use": "print_str", "bind": {"value": "msg"}}
+  ]
+}
