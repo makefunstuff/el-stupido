@@ -1,6 +1,7 @@
 mod compose;
 mod emit;
 mod grammar;
+mod memory;
 mod primitive;
 mod cache;
 
@@ -58,6 +59,65 @@ enum Cmd {
     Inspect {
         /// Path to a compiled binary with metadata trailer
         binary: String,
+    },
+    /// Query and manage tool memory graph
+    Memory {
+        #[command(subcommand)]
+        action: MemoryAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MemoryAction {
+    /// Search memory for tools matching a query (fuzzy match on goal/app/tags)
+    Search {
+        /// Search query (natural language or keywords)
+        query: String,
+        /// Max results to return
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+    },
+    /// Show full details of a remembered tool by hash prefix
+    Show {
+        /// Tool hash or hash prefix
+        hash: String,
+    },
+    /// Record a tool forge into memory with semantic context
+    Record {
+        /// Tool hash (must exist in tool cache)
+        hash: String,
+        /// Natural language goal description
+        #[arg(long)]
+        goal: String,
+        /// Comma-separated tags for search
+        #[arg(long, default_value = "")]
+        tags: String,
+        /// Optional notes
+        #[arg(long, default_value = "")]
+        notes: String,
+    },
+    /// Add a relationship edge between two tools
+    Relate {
+        /// Source tool hash
+        from: String,
+        /// Target tool hash
+        to: String,
+        /// Relationship: variant_of, pipes_to, supersedes
+        rel: String,
+        /// Optional note about the relationship
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// Show recent tool forges (newest first)
+    Log {
+        /// Max entries to show
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+    },
+    /// Find tools related to a given tool (by edges or shared tags)
+    Related {
+        /// Tool hash or hash prefix
+        hash: String,
     },
 }
 
@@ -334,9 +394,6 @@ fn main() {
                     if !p.provides.is_empty() {
                         println!("    provides: [{}]", p.provides.join(", "));
                     }
-                    if !p.requires.is_empty() {
-                        println!("    requires: [{}]", p.requires.join(", "));
-                    }
                     if !p.effects.is_empty() {
                         println!("    effects: [{}]", p.effects.join(", "));
                     }
@@ -411,6 +468,229 @@ fn main() {
                 Err(e) => {
                     eprintln!("error: {e}");
                     std::process::exit(1);
+                }
+            }
+        }
+
+        Cmd::Memory { action } => {
+            match action {
+                MemoryAction::Search { query, limit } => {
+                    let results = memory::search(&query);
+                    if results.is_empty() {
+                        eprintln!("no matches for: {query}");
+                        // Output empty JSON array for machine consumption
+                        println!("[]");
+                    } else {
+                        let items: Vec<serde_json::Value> = results
+                            .into_iter()
+                            .take(limit)
+                            .map(|(hash, entry, score)| {
+                                let binary = cache::bin_path(&hash);
+                                let exists = std::path::Path::new(&binary).exists();
+                                serde_json::json!({
+                                    "hash": &hash[..12.min(hash.len())],
+                                    "hash_full": hash,
+                                    "app": entry.app,
+                                    "goal": entry.goal,
+                                    "io": entry.io,
+                                    "tags": entry.tags,
+                                    "pattern": entry.pattern,
+                                    "use_count": entry.use_count,
+                                    "last_used": entry.last_used,
+                                    "status": entry.status,
+                                    "binary_exists": exists,
+                                    "score": score,
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                    }
+                }
+
+                MemoryAction::Show { hash } => {
+                    let state = memory::load();
+                    let found = state
+                        .entries
+                        .iter()
+                        .find(|(h, _)| h.starts_with(&hash));
+
+                    match found {
+                        Some((full_hash, entry)) => {
+                            let binary = cache::bin_path(full_hash);
+                            let manifest = if std::path::Path::new(&binary).exists() {
+                                cache::read_trailer(&binary)
+                                    .ok()
+                                    .and_then(|v| v["manifest"].as_str().map(|s| s.to_string()))
+                            } else {
+                                None
+                            };
+
+                            // Find edges involving this tool
+                            let edges: Vec<&memory::MemoryEdge> = state
+                                .edges
+                                .iter()
+                                .filter(|e| e.from == *full_hash || e.to == *full_hash)
+                                .collect();
+
+                            let mut result = serde_json::json!({
+                                "hash": full_hash,
+                                "app": entry.app,
+                                "goal": entry.goal,
+                                "tags": entry.tags,
+                                "pattern": entry.pattern,
+                                "io": entry.io,
+                                "caps": entry.caps,
+                                "created": entry.created,
+                                "last_used": entry.last_used,
+                                "use_count": entry.use_count,
+                                "status": entry.status,
+                                "notes": entry.notes,
+                                "binary": binary,
+                                "binary_exists": std::path::Path::new(&binary).exists(),
+                            });
+
+                            if let Some(m) = manifest {
+                                result["manifest"] = serde_json::Value::String(m);
+                            }
+
+                            if !edges.is_empty() {
+                                result["edges"] = serde_json::json!(edges
+                                    .iter()
+                                    .map(|e| serde_json::json!({
+                                        "from": &e.from[..12.min(e.from.len())],
+                                        "to": &e.to[..12.min(e.to.len())],
+                                        "rel": e.rel,
+                                        "note": e.note,
+                                    }))
+                                    .collect::<Vec<_>>());
+                            }
+
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        }
+                        None => {
+                            eprintln!("not in memory: {hash}");
+                            eprintln!("hint: record it with: esc memory record <hash> --goal \"...\"");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                MemoryAction::Record { hash, goal, tags, notes } => {
+                    // Resolve hash — must exist in tool cache
+                    let tools = cache::list_tools();
+                    let found = tools.iter().find(|t| t.hash.starts_with(&hash));
+
+                    match found {
+                        Some(tool) => {
+                            let tag_list: Vec<String> = if tags.is_empty() {
+                                Vec::new()
+                            } else {
+                                tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                            };
+
+                            // Auto-generate pattern from manifest
+                            let pattern = match compose::validate(&tool.manifest_source, &registry) {
+                                Ok(comp) => memory::extract_pattern(&comp.nodes),
+                                Err(_) => String::new(),
+                            };
+
+                            let io = memory::io_signature(&tool.inputs, &tool.outputs);
+
+                            memory::record(
+                                &tool.hash,
+                                &tool.app,
+                                &goal,
+                                &tag_list,
+                                &pattern,
+                                &io,
+                                &tool.capabilities,
+                                &notes,
+                            );
+
+                            eprintln!("recorded: {} [{}] — {}", tool.app, &tool.hash[..12], goal);
+                        }
+                        None => {
+                            eprintln!("tool not found in cache: {hash}");
+                            eprintln!("hint: compile with --store first, then record");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                MemoryAction::Relate { from, to, rel, note } => {
+                    let valid_rels = ["variant_of", "pipes_to", "supersedes"];
+                    if !valid_rels.contains(&rel.as_str()) {
+                        eprintln!("unknown relationship: {rel}");
+                        eprintln!("valid: {}", valid_rels.join(", "));
+                        std::process::exit(1);
+                    }
+
+                    // Resolve hash prefixes
+                    let state = memory::load();
+                    let from_full = state.entries.keys().find(|k| k.starts_with(&from));
+                    let to_full = state.entries.keys().find(|k| k.starts_with(&to));
+
+                    match (from_full, to_full) {
+                        (Some(f), Some(t)) => {
+                            let f = f.clone();
+                            let t = t.clone();
+                            memory::relate(&f, &t, &rel, &note);
+                            eprintln!("edge: {} --[{}]--> {}", &f[..12], rel, &t[..12]);
+                        }
+                        (None, _) => {
+                            eprintln!("source not in memory: {from}");
+                            std::process::exit(1);
+                        }
+                        (_, None) => {
+                            eprintln!("target not in memory: {to}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                MemoryAction::Log { limit } => {
+                    let entries = memory::log(limit);
+                    if entries.is_empty() {
+                        eprintln!("memory is empty");
+                        println!("[]");
+                    } else {
+                        let items: Vec<serde_json::Value> = entries
+                            .into_iter()
+                            .map(|(hash, entry)| {
+                                serde_json::json!({
+                                    "hash": &hash[..12.min(hash.len())],
+                                    "app": entry.app,
+                                    "goal": entry.goal,
+                                    "io": entry.io,
+                                    "use_count": entry.use_count,
+                                    "last_used": entry.last_used,
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                    }
+                }
+
+                MemoryAction::Related { hash } => {
+                    let results = memory::related(&hash);
+                    if results.is_empty() {
+                        eprintln!("no related tools for: {hash}");
+                        println!("[]");
+                    } else {
+                        let items: Vec<serde_json::Value> = results
+                            .into_iter()
+                            .map(|(h, entry, rel)| {
+                                serde_json::json!({
+                                    "hash": &h[..12.min(h.len())],
+                                    "app": entry.app,
+                                    "goal": entry.goal,
+                                    "io": entry.io,
+                                    "relationship": rel,
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                    }
                 }
             }
         }

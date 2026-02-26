@@ -87,16 +87,6 @@ pub enum ComposeError {
         got: String,
     },
 
-    #[error(
-        "node '{node}' primitive '{prim}' requires [{requires}] but composition provides no [{missing}]"
-    )]
-    UnsatisfiedRequires {
-        node: String,
-        prim: String,
-        requires: String,
-        missing: String,
-    },
-
     #[error("node '{node}' primitive '{prim}': bind '{bind}' points to unknown node '{target}'")]
     UnknownBindTarget {
         node: String,
@@ -159,7 +149,7 @@ impl ComposeError {
             ComposeError::UnknownCapability(cap) => (
                 "unknown_capability",
                 serde_json::json!({"capability": cap}),
-                format!("capability '{}' is not recognized — valid capabilities: io_read, io_write, fs_read, fs_write", cap),
+                format!("capability '{}' is not recognized — valid capabilities: io_read, io_write, fs_read, fs_write, net_read, env_read", cap),
             ),
             ComposeError::AppTooLong { len, max } => (
                 "app_too_long",
@@ -215,11 +205,6 @@ impl ComposeError {
                 "wrong_type",
                 serde_json::json!({"node": node, "primitive": prim, "param": param, "expected": expected, "got": got}),
                 format!("param '{}' on node '{}' expects {} but got {} — fix the value type", param, node, expected, got),
-            ),
-            ComposeError::UnsatisfiedRequires { node, prim, requires, missing } => (
-                "unsatisfied_requires",
-                serde_json::json!({"node": node, "primitive": prim, "requires": requires, "missing": missing}),
-                format!("node '{}' needs [{}] provided by other nodes in the graph", node, missing),
             ),
             ComposeError::UnknownBindTarget { node, prim, bind, target } => (
                 "unknown_bind_target",
@@ -308,6 +293,13 @@ pub fn extract_io_contract(comp: &ValidComposition) -> (Vec<serde_json::Value>, 
             "write_file" | "write_file_dyn" => {
                 outputs.push(serde_json::json!({"kind": "file", "type": "str", "node": node.id}));
             }
+            "http_get" => {
+                let url = node.params.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                inputs.push(serde_json::json!({"kind": "http", "type": "str", "url": url, "node": node.id}));
+            }
+            "http_get_dyn" => {
+                inputs.push(serde_json::json!({"kind": "http", "type": "str", "dynamic": true, "node": node.id}));
+            }
             _ => {}
         }
     }
@@ -325,6 +317,11 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
     if !caps.is_empty() {
         writeln!(out, "C {}", caps.join(" ")).unwrap();
     }
+
+    // Build node-index map once (outside the loop)
+    let node_index: HashMap<&str, usize> = comp.nodes.iter().enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
 
     for (idx, node) in comp.nodes.iter().enumerate() {
         let op = match node.primitive_id.as_str() {
@@ -376,13 +373,10 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
             "lt" => "lt",
             "read_stdin_all" => "ra",
             "append_file" => "af",
+            "http_get" => "hg",
+            "http_get_dyn" => "hd",
             other => other,
         };
-
-        // Build node index map for resolving binds to canonical indices
-        let node_index: HashMap<&str, usize> = comp.nodes.iter().enumerate()
-            .map(|(i, n)| (n.id.as_str(), i))
-            .collect();
 
         let mut args = String::new();
 
@@ -398,6 +392,11 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
             }
             "const_str" | "read_file" | "env_str" | "append_file" => {
                 if let Some(ParamValue::Str(s)) = node.params.get("value").or(node.params.get("path")).or(node.params.get("name")) {
+                    write!(args, " \"{}\"", s).unwrap();
+                }
+            }
+            "http_get" => {
+                if let Some(ParamValue::Str(s)) = node.params.get("url") {
                     write!(args, " \"{}\"", s).unwrap();
                 }
             }
@@ -433,6 +432,7 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
                 "select_num" | "select_str" => vec!["cond", "then", "else"],
                 "repeat_str" => vec!["text", "times"],
                 "read_file_dyn" | "env_str_dyn" => vec!["path", "name"],
+                "http_get_dyn" => vec!["url"],
                 "write_file_dyn" => vec!["path", "content"],
                 "exit_code" => vec!["code"],
                 "format_str" => vec!["v1", "v2"],
@@ -660,21 +660,6 @@ pub fn validate(input: &str, registry: &Registry) -> Result<ValidComposition, Co
 
     for (idx, node) in nodes.iter().enumerate() {
         let prim = registry.get(&node.primitive_id).unwrap();
-
-        let missing_caps: Vec<&str> = prim
-            .requires
-            .iter()
-            .filter(|r| !provided.contains(**r))
-            .copied()
-            .collect();
-        if !missing_caps.is_empty() {
-            return Err(ComposeError::UnsatisfiedRequires {
-                node: node.id.clone(),
-                prim: node.primitive_id.clone(),
-                requires: prim.requires.join(", "),
-                missing: missing_caps.join(", "),
-            });
-        }
 
         for bind_def in &prim.binds {
             if let Some(target_id) = node.bind.get(bind_def.name) {
@@ -1159,6 +1144,214 @@ fn parse_tape_instruction(
             let value = parse_tape_number(&args[0], line_no)?;
             params.insert("index".to_string(), ParamValue::Number(value));
             "arg_str"
+        }
+        "ev" => {
+            expect(1)?;
+            params.insert("name".to_string(), ParamValue::Str(args[0].clone()));
+            "env_str"
+        }
+        "ed" => {
+            expect(1)?;
+            bind.insert(
+                "name".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "env_str_dyn"
+        }
+        "gc" => {
+            expect(0)?;
+            "arg_count"
+        }
+        "fm" => {
+            // format_str: template bind_v1 [bind_v2]
+            if args.len() < 2 || args.len() > 3 {
+                return Err(ComposeError::TapeParse {
+                    line: line_no,
+                    msg: format!("opcode '{opcode}' expects 2 or 3 args, got {}", args.len()),
+                });
+            }
+            params.insert("template".to_string(), ParamValue::Str(args[0].clone()));
+            bind.insert(
+                "v1".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            if args.len() == 3 {
+                bind.insert(
+                    "v2".to_string(),
+                    parse_tape_ref(&args[2], line_no, slot_idx)?,
+                );
+            }
+            "format_str"
+        }
+        "ex" => {
+            expect(1)?;
+            bind.insert(
+                "code".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "exit_code"
+        }
+        "su" => {
+            expect(3)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "start".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "len".to_string(),
+                parse_tape_ref(&args[2], line_no, slot_idx)?,
+            );
+            "substr"
+        }
+        "up" => {
+            expect(1)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "upper_str"
+        }
+        "lo" => {
+            expect(1)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "lower_str"
+        }
+        "tr" => {
+            expect(1)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "trim_str"
+        }
+        "ct" => {
+            expect(2)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "needle".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "contains_str"
+        }
+        "re" => {
+            expect(3)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "pattern".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "replacement".to_string(),
+                parse_tape_ref(&args[2], line_no, slot_idx)?,
+            );
+            "replace_str"
+        }
+        "sc" => {
+            expect(2)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "delim".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "split_count"
+        }
+        "sn2" => {
+            expect(3)?;
+            bind.insert(
+                "text".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "delim".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "index".to_string(),
+                parse_tape_ref(&args[2], line_no, slot_idx)?,
+            );
+            "split_nth"
+        }
+        "mo" => {
+            expect(2)?;
+            bind.insert(
+                "lhs".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "rhs".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "mod_num"
+        }
+        "fl" => {
+            expect(1)?;
+            bind.insert(
+                "value".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "floor"
+        }
+        "ab" => {
+            expect(1)?;
+            bind.insert(
+                "value".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "abs"
+        }
+        "lt" => {
+            expect(2)?;
+            bind.insert(
+                "lhs".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "rhs".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "lt"
+        }
+        "ra" => {
+            expect(0)?;
+            "read_stdin_all"
+        }
+        "af" => {
+            expect(2)?;
+            params.insert("path".to_string(), ParamValue::Str(args[0].clone()));
+            bind.insert(
+                "content".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "append_file"
+        }
+        "hg" => {
+            expect(1)?;
+            params.insert("url".to_string(), ParamValue::Str(args[0].clone()));
+            "http_get"
+        }
+        "hd" => {
+            expect(1)?;
+            bind.insert(
+                "url".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "http_get_dyn"
         }
         _ => {
             return Err(ComposeError::TapeParse {

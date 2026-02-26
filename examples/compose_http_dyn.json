@@ -1,0 +1,21 @@
+{
+  "app": "http_dyn",
+  "capabilities": ["net_read", "io_write"],
+  "nodes": [
+    {
+      "id": "url",
+      "use": "arg_str",
+      "params": {"index": 1}
+    },
+    {
+      "id": "response",
+      "use": "http_get_dyn",
+      "bind": {"url": "url"}
+    },
+    {
+      "id": "out",
+      "use": "print_str",
+      "bind": {"value": "response"}
+    }
+  ]
+}

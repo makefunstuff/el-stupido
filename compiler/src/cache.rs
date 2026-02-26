@@ -63,7 +63,10 @@ fn save_registry(tools: &[CachedTool]) {
         let _ = fs::create_dir_all(parent);
     }
     let json = serde_json::to_string_pretty(tools).unwrap_or_default();
-    let _ = fs::write(&path, json);
+    let tmp = path.with_extension("tmp");
+    if fs::write(&tmp, &json).is_ok() {
+        let _ = fs::rename(&tmp, &path);
+    }
 }
 
 pub fn lookup(hash: &str) -> Option<CachedTool> {

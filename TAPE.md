@@ -51,6 +51,27 @@ C io_write
 - `wf` -> `write_file path=<str> content=<ref>`
 - `wd` -> `write_file_dyn path=<ref> content=<ref>`
 - `pn|ps` -> `print_num|print_str value=<ref>`
+- `gn` -> `arg_num index=<num>`
+- `gs` -> `arg_str index=<num>`
+- `ev` -> `env_str name=<str>`
+- `ed` -> `env_str_dyn name=<ref>`
+- `gc` -> `arg_count`
+- `fm` -> `format_str template=<str> v1=<ref> [v2=<ref>]`
+- `ex` -> `exit_code code=<ref>`
+- `su` -> `substr text=<ref> start=<ref> len=<ref>`
+- `up` -> `upper_str text=<ref>`
+- `lo` -> `lower_str text=<ref>`
+- `tr` -> `trim_str text=<ref>`
+- `ct` -> `contains_str text=<ref> needle=<ref>`
+- `re` -> `replace_str text=<ref> pattern=<ref> replacement=<ref>`
+- `sc` -> `split_count text=<ref> delim=<ref>`
+- `sn2` -> `split_nth text=<ref> delim=<ref> index=<ref>`
+- `mo|fl|ab` -> `mod_num|floor|abs` (numeric ops)
+- `lt` -> `lt lhs=<ref> rhs=<ref>`
+- `ra` -> `read_stdin_all`
+- `af` -> `append_file path=<str> content=<ref>`
+- `hg` -> `http_get url=<str>`
+- `hd` -> `http_get_dyn url=<ref>`
 
 ## Notes
 

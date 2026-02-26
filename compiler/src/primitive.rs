@@ -74,7 +74,6 @@ pub struct Primitive {
     pub params: Vec<ParamDef>,
     pub binds: Vec<BindDef>,
     pub provides: Vec<&'static str>,
-    pub requires: Vec<&'static str>,
     pub effects: Vec<&'static str>,
 }
 
@@ -129,7 +128,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -143,7 +142,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -164,7 +163,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -185,7 +184,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -206,7 +205,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -227,7 +226,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -248,7 +247,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -269,7 +268,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -290,7 +289,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -311,7 +310,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -325,7 +324,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -351,7 +350,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -377,7 +376,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -398,7 +397,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -412,7 +411,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -433,7 +432,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -447,7 +446,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -457,7 +456,7 @@ impl Registry {
             params: vec![],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -478,7 +477,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -492,7 +491,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["io_read", "io_write"],
         });
 
@@ -506,7 +505,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -520,7 +519,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["fs_read"],
         });
 
@@ -534,7 +533,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["fs_read"],
         });
 
@@ -552,7 +551,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["fs_write"],
         });
 
@@ -573,7 +572,7 @@ impl Registry {
                 },
             ],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["fs_write"],
         });
 
@@ -587,7 +586,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["io_write"],
         });
 
@@ -601,7 +600,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["io_write"],
         });
 
@@ -615,7 +614,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -629,7 +628,7 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -643,8 +642,8 @@ impl Registry {
             }],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
-            effects: vec!["pure"],
+
+            effects: vec!["env_read"],
         });
 
         self.add(Primitive {
@@ -657,8 +656,8 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
-            effects: vec!["pure"],
+
+            effects: vec!["env_read"],
         });
 
         self.add(Primitive {
@@ -667,7 +666,7 @@ impl Registry {
             params: vec![],
             binds: vec![],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -692,7 +691,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -706,7 +705,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -732,7 +731,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -746,7 +745,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -760,7 +759,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -774,7 +773,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -795,7 +794,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -821,7 +820,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -842,7 +841,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -868,7 +867,7 @@ impl Registry {
                 },
             ],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -889,7 +888,7 @@ impl Registry {
                 },
             ],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -903,7 +902,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -917,7 +916,7 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["num"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -938,7 +937,7 @@ impl Registry {
                 },
             ],
             provides: vec!["bool"],
-            requires: vec![],
+
             effects: vec!["pure"],
         });
 
@@ -948,7 +947,7 @@ impl Registry {
             params: vec![],
             binds: vec![],
             provides: vec!["str"],
-            requires: vec![],
+
             effects: vec!["io_read"],
         });
 
@@ -966,8 +965,36 @@ impl Registry {
                 required: true,
             }],
             provides: vec!["sink"],
-            requires: vec![],
+
             effects: vec!["fs_write"],
+        });
+
+        self.add(Primitive {
+            id: "http_get",
+            description: "Fetch URL via HTTP GET, return body as string",
+            params: vec![ParamDef {
+                name: "url",
+                ty: ParamType::Str,
+                required: true,
+            }],
+            binds: vec![],
+            provides: vec!["str"],
+
+            effects: vec!["net_read"],
+        });
+
+        self.add(Primitive {
+            id: "http_get_dyn",
+            description: "Fetch bound URL via HTTP GET, return body as string",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "url",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+
+            effects: vec!["net_read"],
         });
     }
 }

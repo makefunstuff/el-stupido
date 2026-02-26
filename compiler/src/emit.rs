@@ -3,11 +3,25 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 fn rust_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if c.is_control() => {
+                // Escape all other control characters as \x{nn}
+                for b in c.to_string().bytes() {
+                    out.push_str(&format!("\\x{:02x}", b));
+                }
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn f64_literal(n: f64) -> String {
@@ -16,6 +30,95 @@ fn f64_literal(n: f64) -> String {
         s.push_str(".0");
     }
     s
+}
+
+fn emit_http_helper(out: &mut String) {
+    use std::fmt::Write;
+    writeln!(out, "fn esc_http_get(url: &str) -> String {{").unwrap();
+    writeln!(out, "    use std::io::{{Read, Write}};").unwrap();
+    writeln!(out, "    use std::net::TcpStream;").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Parse URL: support http:// and https:// (https via external openssl s_client or plain TCP)").unwrap();
+    writeln!(out, "    let url = url.trim();").unwrap();
+    writeln!(out, "    let is_https = url.starts_with(\"https://\");").unwrap();
+    writeln!(out, "    let without_scheme = url.strip_prefix(\"https://\").or_else(|| url.strip_prefix(\"http://\")).unwrap_or(url);").unwrap();
+    writeln!(
+        out,
+        "    let (host_port, path) = match without_scheme.find('/') {{"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "        Some(i) => (&without_scheme[..i], &without_scheme[i..]),"
+    )
+    .unwrap();
+    writeln!(out, "        None => (without_scheme, \"/\"),").unwrap();
+    writeln!(out, "    }};").unwrap();
+    writeln!(out, "    let (host, port) = match host_port.find(':') {{").unwrap();
+    writeln!(out, "        Some(i) => (&host_port[..i], host_port[i+1..].parse::<u16>().unwrap_or(if is_https {{ 443 }} else {{ 80 }})),").unwrap();
+    writeln!(
+        out,
+        "        None => (host_port, if is_https {{ 443 }} else {{ 80 }}),"
+    )
+    .unwrap();
+    writeln!(out, "    }};").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    let request = format!(\"GET {{}} HTTP/1.1\\r\\nHost: {{}}\\r\\nConnection: close\\r\\nUser-Agent: esc/0.1\\r\\n\\r\\n\", path, host);").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    if is_https {{").unwrap();
+    writeln!(
+        out,
+        "        // For HTTPS, shell out to openssl s_client or curl as fallback"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "        let output = std::process::Command::new(\"curl\")"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            .args(&[\"-s\", \"-L\", \"--max-time\", \"10\", \"--proto\", \"=https,http\", \"--proto-redir\", \"=https,http\", url])"
+    )
+    .unwrap();
+    writeln!(out, "            .output();").unwrap();
+    writeln!(out, "        match output {{").unwrap();
+    writeln!(out, "            Ok(o) if o.status.success() => return String::from_utf8_lossy(&o.stdout).to_string(),").unwrap();
+    writeln!(out, "            _ => return String::new(),").unwrap();
+    writeln!(out, "        }}").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Plain HTTP via raw TCP").unwrap();
+    writeln!(out, "    let addr = format!(\"{{}}:{{}}\", host, port);").unwrap();
+    writeln!(
+        out,
+        "    let mut stream = match TcpStream::connect(&addr) {{"
+    )
+    .unwrap();
+    writeln!(out, "        Ok(s) => s,").unwrap();
+    writeln!(out, "        Err(_) => return String::new(),").unwrap();
+    writeln!(out, "    }};").unwrap();
+    writeln!(
+        out,
+        "    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));"
+    )
+    .unwrap();
+    writeln!(out, "    let _ = stream.write_all(request.as_bytes());").unwrap();
+    writeln!(out, "    let mut response = String::new();").unwrap();
+    writeln!(out, "    let _ = stream.read_to_string(&mut response);").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Strip HTTP headers (find \\r\\n\\r\\n)").unwrap();
+    writeln!(
+        out,
+        "    if let Some(pos) = response.find(\"\\r\\n\\r\\n\") {{"
+    )
+    .unwrap();
+    writeln!(out, "        response[pos + 4..].to_string()").unwrap();
+    writeln!(out, "    }} else {{").unwrap();
+    writeln!(out, "        response").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out, "").unwrap();
 }
 
 fn bind_var(
@@ -44,6 +147,20 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
     )
     .unwrap();
     writeln!(out).unwrap();
+
+    let mut needs_http_helper = false;
+
+    // First pass: check if we need the HTTP helper
+    for node in &comp.nodes {
+        if node.primitive_id == "http_get" || node.primitive_id == "http_get_dyn" {
+            needs_http_helper = true;
+            break;
+        }
+    }
+
+    if needs_http_helper {
+        emit_http_helper(&mut out);
+    }
 
     writeln!(out, "fn main() {{").unwrap();
 
@@ -165,6 +282,12 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
                 )
                 .unwrap();
                 writeln!(out, "        let count = count.min({repeat_cap});").unwrap();
+                writeln!(
+                    out,
+                    "        let result_len = {text}.len().saturating_mul(count);"
+                )
+                .unwrap();
+                writeln!(out, "        if result_len > 10_000_000 {{ eprintln!(\"error: repeat_str would produce {{}} bytes (max 10MB)\", result_len); std::process::exit(1); }}").unwrap();
                 writeln!(out, "        {text}.repeat(count)").unwrap();
                 writeln!(out, "    }};").unwrap();
             }
@@ -411,6 +534,19 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
                 writeln!(out, "        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(\"{}\").expect(\"cannot open file\");", rust_string(path)).unwrap();
                 writeln!(out, "        let _ = f.write_all({content}.as_bytes());").unwrap();
                 writeln!(out, "    }};").unwrap();
+            }
+            "http_get" => {
+                let url = node.params["url"].as_str().unwrap();
+                writeln!(
+                    out,
+                    "    let {var}: String = esc_http_get(\"{}\");",
+                    rust_string(url)
+                )
+                .unwrap();
+            }
+            "http_get_dyn" => {
+                let url_var = bind_var(node, "url", &vars);
+                writeln!(out, "    let {var}: String = esc_http_get(&{url_var});").unwrap();
             }
             other => {
                 writeln!(
