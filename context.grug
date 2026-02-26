@@ -60,3 +60,4 @@ dynamic_path = examples/compose_dynamic_path.json (cwd + path_join + dynamic fil
 [notes]
 readme = DO NOT MODIFY README.md (human-written)
 old_code = all old C source/libs/tools/specs deleted, project is Rust-only now
+suckless = SUCKLESS.md defines small-surface design rules and hard limits

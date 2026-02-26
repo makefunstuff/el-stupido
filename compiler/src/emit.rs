@@ -1,4 +1,4 @@
-use crate::compose::ValidComposition;
+use crate::compose::{MAX_REPEAT_TIMES, ValidComposition};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -157,13 +157,14 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
             "repeat_str" => {
                 let text = bind_var(node, "text", &vars);
                 let times = bind_var(node, "times", &vars);
+                let repeat_cap = MAX_REPEAT_TIMES as usize;
                 writeln!(out, "    let {var}: String = {{").unwrap();
                 writeln!(
                     out,
                     "        let count = if {times}.is_finite() && {times} > 0.0 {{ {times}.floor() as usize }} else {{ 0 }};"
                 )
                 .unwrap();
-                writeln!(out, "        let count = count.min(10_000);").unwrap();
+                writeln!(out, "        let count = count.min({repeat_cap});").unwrap();
                 writeln!(out, "        {text}.repeat(count)").unwrap();
                 writeln!(out, "    }};").unwrap();
             }

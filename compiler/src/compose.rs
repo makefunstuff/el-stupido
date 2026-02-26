@@ -3,6 +3,13 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
+pub const MAX_APP_BYTES: usize = 64;
+pub const MAX_NODE_ID_BYTES: usize = 64;
+pub const MAX_NODES: usize = 256;
+pub const MAX_CAPABILITIES: usize = 16;
+pub const MAX_STRING_PARAM_BYTES: usize = 4096;
+pub const MAX_REPEAT_TIMES: f64 = 10_000.0;
+
 #[derive(Debug, Error)]
 pub enum ComposeError {
     #[error("unknown primitive '{0}'")]
@@ -10,6 +17,29 @@ pub enum ComposeError {
 
     #[error("manifest declares unknown capability '{0}'")]
     UnknownCapability(String),
+
+    #[error("app id too long: {len} bytes (max {max})")]
+    AppTooLong { len: usize, max: usize },
+
+    #[error("node id too long: '{id}' is {len} bytes (max {max})")]
+    NodeIdTooLong { id: String, len: usize, max: usize },
+
+    #[error("composition has {found} nodes (max {max})")]
+    TooManyNodes { found: usize, max: usize },
+
+    #[error("manifest declares {found} capabilities (max {max})")]
+    TooManyCapabilities { found: usize, max: usize },
+
+    #[error(
+        "node '{node}' primitive '{prim}': param '{param}' string length {len} exceeds max {max}"
+    )]
+    StringParamTooLong {
+        node: String,
+        prim: String,
+        param: String,
+        len: usize,
+        max: usize,
+    },
 
     #[error("node '{node}' primitive '{prim}' requires capability '{capability}'")]
     MissingCapability {
@@ -96,6 +126,11 @@ pub enum ComposeError {
         expected: String,
     },
 
+    #[error(
+        "node '{node}' primitive 'repeat_str': constant repeat count {value} out of range [0, {max}]"
+    )]
+    RepeatLiteralOutOfRange { node: String, value: f64, max: f64 },
+
     #[error("duplicate node id '{0}'")]
     DuplicateNodeId(String),
 
@@ -148,8 +183,29 @@ pub struct ValidNode {
 pub fn validate(json: &str, registry: &Registry) -> Result<ValidComposition, ComposeError> {
     let manifest: Manifest = serde_json::from_str(json)?;
 
+    if manifest.app.len() > MAX_APP_BYTES {
+        return Err(ComposeError::AppTooLong {
+            len: manifest.app.len(),
+            max: MAX_APP_BYTES,
+        });
+    }
+
     if manifest.nodes.is_empty() {
         return Err(ComposeError::Empty);
+    }
+
+    if manifest.nodes.len() > MAX_NODES {
+        return Err(ComposeError::TooManyNodes {
+            found: manifest.nodes.len(),
+            max: MAX_NODES,
+        });
+    }
+
+    if manifest.capabilities.len() > MAX_CAPABILITIES {
+        return Err(ComposeError::TooManyCapabilities {
+            found: manifest.capabilities.len(),
+            max: MAX_CAPABILITIES,
+        });
     }
 
     let known_caps: HashSet<String> = registry
@@ -169,6 +225,14 @@ pub fn validate(json: &str, registry: &Registry) -> Result<ValidComposition, Com
     let mut nodes = Vec::with_capacity(manifest.nodes.len());
 
     for spec in &manifest.nodes {
+        if spec.id.len() > MAX_NODE_ID_BYTES {
+            return Err(ComposeError::NodeIdTooLong {
+                id: spec.id.clone(),
+                len: spec.id.len(),
+                max: MAX_NODE_ID_BYTES,
+            });
+        }
+
         if !seen_ids.insert(spec.id.clone()) {
             return Err(ComposeError::DuplicateNodeId(spec.id.clone()));
         }
@@ -183,6 +247,18 @@ pub fn validate(json: &str, registry: &Registry) -> Result<ValidComposition, Com
                     node: spec.id.clone(),
                     prim: spec.primitive.clone(),
                     param: param_name.clone(),
+                });
+            }
+
+            if let Some(ParamValue::Str(s)) = spec.params.get(param_name)
+                && s.len() > MAX_STRING_PARAM_BYTES
+            {
+                return Err(ComposeError::StringParamTooLong {
+                    node: spec.id.clone(),
+                    prim: spec.primitive.clone(),
+                    param: param_name.clone(),
+                    len: s.len(),
+                    max: MAX_STRING_PARAM_BYTES,
                 });
             }
         }
@@ -301,6 +377,20 @@ pub fn validate(json: &str, registry: &Registry) -> Result<ValidComposition, Com
                     });
                 }
             }
+        }
+
+        if node.primitive_id == "repeat_str"
+            && let Some(times_target_id) = node.bind.get("times")
+            && let Some(times_target) = node_by_id.get(times_target_id.as_str())
+            && times_target.primitive_id == "const_num"
+            && let Some(value) = times_target.params.get("value").and_then(|v| v.as_f64())
+            && !(0.0..=MAX_REPEAT_TIMES).contains(&value)
+        {
+            return Err(ComposeError::RepeatLiteralOutOfRange {
+                node: node.id.clone(),
+                value,
+                max: MAX_REPEAT_TIMES,
+            });
         }
 
         for effect in &node.effects {
