@@ -14,12 +14,16 @@ pipeline = JSON graph manifest -> validate (types + binds + effect capabilities)
 thesis = machine-first compiled IR for constrained LLM output, not a human language and not a domain framework
 primitives = core compute/io/fs building blocks with typed params, typed binds, capabilities, and effects
 library = grows over time; domain packs can be layered outside core compiler
+formats = tape (canonical compact), .esc (line-based), JSON (compat)
+agent = LLM forges native tools on demand via --machine --store, caches in ~/.esc/, reuses by hash
 
 [subcommands]
-compose = JSON manifest -> validate -> emit Rust -> compile -> binary
+compose = JSON manifest -> validate -> emit Rust -> compile -> binary (--machine for JSON output, --store for cache)
 expand = JSON manifest -> print generated Rust source
 grammar = print GBNF grammar for constrained LLM output
-primitives = list all available primitives with params/binds/provides/requires/effects
+primitives = list all available primitives with params/binds/provides/requires/effects (--machine for JSON)
+tools = manage tool cache (list, info, forget, clear)
+inspect = read binary metadata trailer (manifest + IO contract + hash)
 
 [primitives]
 const_num = numeric constant (value:f64) -> provides:num effects:pure
@@ -42,22 +46,37 @@ write_file = file write (path:str, bind content:str) -> provides:sink effects:fs
 write_file_dyn = file write (bind path:str, bind content:str) -> provides:sink effects:fs_write
 print_num = stdout print number (bind value:num) -> provides:sink effects:io_write
 print_str = stdout print string (bind value:str) -> provides:sink effects:io_write
+arg_num = CLI argument as number (index:f64) -> provides:num effects:pure
+arg_str = CLI argument as string (index:f64) -> provides:str effects:pure
 
 [source]
-main = compiler/src/main.rs (CLI entry point, 4 subcommands)
+main = compiler/src/main.rs (CLI entry point, 6 subcommands)
 primitive = compiler/src/primitive.rs (Primitive/ParamDef/BindDef/effects, Registry with builtins)
-compose = compiler/src/compose.rs (graph manifest parsing + typed validation + capability safety)
+compose = compiler/src/compose.rs (graph manifest parsing + typed validation + capability safety + canonical tape + IO contract)
 emit = compiler/src/emit.rs (Rust code emitter from validated graph, core primitives only)
 grammar = compiler/src/grammar.rs (GBNF grammar auto-generation from registry)
+cache = compiler/src/cache.rs (tool cache: SHA-256 hash, registry, binary trailer read/write)
+agent = agent/esc_agent.py (autonomous agent loop POC: goal -> compile -> cache -> invoke)
+embed_exp = agent/embedding_experiment.py (structural vs embedding similarity experiment)
 
 [examples]
 sum = examples/compose_sum.json (pure arithmetic + stdout)
+sum_esc = examples/compose_sum.esc (same sum program in compact line-based .esc form)
+sum_tape = examples/compose_sum.tape (opcode tape form with positional args)
 prompt_double = examples/compose_prompt_double.json (stdin + parse + arithmetic + stdout)
+prompt_double_esc = examples/compose_prompt_double.esc (quoted strings + bindings in .esc form)
+prompt_double_tape = examples/compose_prompt_double.tape (compact tape form)
 file_report = examples/compose_file_report.json (file read + string length + stdout)
 branch_repeat = examples/compose_branch_repeat.json (boolean logic + select + bounded repeat)
 dynamic_path = examples/compose_dynamic_path.json (cwd + path_join + dynamic file read)
+add_args = examples/compose_add_args.json (CLI args + arithmetic — reusable parameterized tool)
+
+[tape_opcodes]
+gn = arg_num (get arg as number)
+gs = arg_str (get arg as string)
 
 [notes]
 readme = DO NOT MODIFY README.md (human-written)
 old_code = all old C source/libs/tools/specs deleted, project is Rust-only now
 suckless = SUCKLESS.md defines small-surface design rules and hard limits
+tape = TAPE.md documents canonical compact opcode format

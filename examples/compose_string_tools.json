@@ -1,0 +1,9 @@
+{
+  "app": "string-tools",
+  "capabilities": ["io_write"],
+  "nodes": [
+    {"id": "text", "use": "arg_str", "params": {"index": 1}},
+    {"id": "upper", "use": "upper_str", "bind": {"text": "text"}},
+    {"id": "out", "use": "print_str", "bind": {"value": "upper"}}
+  ]
+}

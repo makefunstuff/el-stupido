@@ -1,4 +1,4 @@
-use crate::compose::{MAX_REPEAT_TIMES, ValidComposition};
+use crate::compose::{ValidComposition, MAX_REPEAT_TIMES};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -266,6 +266,151 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
                     "    let {var}: () = {{ println!(\"{{}}\", {value}); }};"
                 )
                 .unwrap();
+            }
+            "arg_num" => {
+                let index = node.params["index"].as_f64().unwrap() as usize;
+                writeln!(out, "    let {var}: f64 = std::env::args().nth({index})").unwrap();
+                writeln!(out, "        .and_then(|s| s.trim().parse::<f64>().ok())").unwrap();
+                writeln!(out, "        .unwrap_or_else(|| {{ eprintln!(\"error: missing argument {index}\"); std::process::exit(1); }});").unwrap();
+            }
+            "arg_str" => {
+                let index = node.params["index"].as_f64().unwrap() as usize;
+                writeln!(out, "    let {var}: String = std::env::args().nth({index})").unwrap();
+                writeln!(out, "        .unwrap_or_else(|| {{ eprintln!(\"error: missing argument {index}\"); std::process::exit(1); }});").unwrap();
+            }
+            "env_str" => {
+                let name = node.params["name"].as_str().unwrap();
+                writeln!(
+                    out,
+                    "    let {var}: String = std::env::var(\"{}\").unwrap_or_default();",
+                    rust_string(name)
+                )
+                .unwrap();
+            }
+            "env_str_dyn" => {
+                let name_var = bind_var(node, "name", &vars);
+                writeln!(
+                    out,
+                    "    let {var}: String = std::env::var(&{name_var}).unwrap_or_default();"
+                )
+                .unwrap();
+            }
+            "arg_count" => {
+                writeln!(
+                    out,
+                    "    let {var}: f64 = (std::env::args().count() - 1) as f64;"
+                )
+                .unwrap();
+            }
+            "format_str" => {
+                let template = node.params["template"].as_str().unwrap();
+                let v1 = bind_var(node, "v1", &vars);
+                let has_v2 = node.bind.contains_key("v2");
+                if has_v2 {
+                    let v2 = bind_var(node, "v2", &vars);
+                    writeln!(out, "    let {var}: String = \"{}\".replace(\"{{1}}\", &{v1}).replace(\"{{2}}\", &{v2});", rust_string(template)).unwrap();
+                } else {
+                    writeln!(
+                        out,
+                        "    let {var}: String = \"{}\".replace(\"{{1}}\", &{v1});",
+                        rust_string(template)
+                    )
+                    .unwrap();
+                }
+            }
+            "exit_code" => {
+                let code = bind_var(node, "code", &vars);
+                writeln!(
+                    out,
+                    "    let {var}: () = std::process::exit({code} as i32);"
+                )
+                .unwrap();
+            }
+            "substr" => {
+                let text = bind_var(node, "text", &vars);
+                let start = bind_var(node, "start", &vars);
+                let len = bind_var(node, "len", &vars);
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(out, "        let s = {start}.max(0.0).floor() as usize;").unwrap();
+                writeln!(out, "        let l = {len}.max(0.0).floor() as usize;").unwrap();
+                writeln!(out, "        {text}.chars().skip(s).take(l).collect()").unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+            "upper_str" => {
+                let text = bind_var(node, "text", &vars);
+                writeln!(out, "    let {var}: String = {text}.to_uppercase();").unwrap();
+            }
+            "lower_str" => {
+                let text = bind_var(node, "text", &vars);
+                writeln!(out, "    let {var}: String = {text}.to_lowercase();").unwrap();
+            }
+            "trim_str" => {
+                let text = bind_var(node, "text", &vars);
+                writeln!(out, "    let {var}: String = {text}.trim().to_string();").unwrap();
+            }
+            "contains_str" => {
+                let text = bind_var(node, "text", &vars);
+                let needle = bind_var(node, "needle", &vars);
+                writeln!(out, "    let {var}: bool = {text}.contains(&*{needle});").unwrap();
+            }
+            "replace_str" => {
+                let text = bind_var(node, "text", &vars);
+                let pattern = bind_var(node, "pattern", &vars);
+                let replacement = bind_var(node, "replacement", &vars);
+                writeln!(
+                    out,
+                    "    let {var}: String = {text}.replace(&*{pattern}, &{replacement});"
+                )
+                .unwrap();
+            }
+            "split_count" => {
+                let text = bind_var(node, "text", &vars);
+                let delim = bind_var(node, "delim", &vars);
+                writeln!(
+                    out,
+                    "    let {var}: f64 = {text}.split(&*{delim}).count() as f64;"
+                )
+                .unwrap();
+            }
+            "split_nth" => {
+                let text = bind_var(node, "text", &vars);
+                let delim = bind_var(node, "delim", &vars);
+                let index = bind_var(node, "index", &vars);
+                writeln!(out, "    let {var}: String = {text}.split(&*{delim}).nth({index} as usize).unwrap_or(\"\").to_string();").unwrap();
+            }
+            "mod_num" => {
+                let lhs = bind_var(node, "lhs", &vars);
+                let rhs = bind_var(node, "rhs", &vars);
+                writeln!(out, "    let {var}: f64 = {lhs} % {rhs};").unwrap();
+            }
+            "floor" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = {value}.floor();").unwrap();
+            }
+            "abs" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = {value}.abs();").unwrap();
+            }
+            "lt" => {
+                let lhs = bind_var(node, "lhs", &vars);
+                let rhs = bind_var(node, "rhs", &vars);
+                writeln!(out, "    let {var}: bool = {lhs} < {rhs};").unwrap();
+            }
+            "read_stdin_all" => {
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(out, "        let mut buf = String::new();").unwrap();
+                writeln!(out, "        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).unwrap_or(0);").unwrap();
+                writeln!(out, "        buf").unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+            "append_file" => {
+                let path = node.params["path"].as_str().unwrap();
+                let content = bind_var(node, "content", &vars);
+                writeln!(out, "    let {var}: () = {{").unwrap();
+                writeln!(out, "        use std::io::Write as _;").unwrap();
+                writeln!(out, "        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(\"{}\").expect(\"cannot open file\");", rust_string(path)).unwrap();
+                writeln!(out, "        let _ = f.write_all({content}.as_bytes());").unwrap();
+                writeln!(out, "    }};").unwrap();
             }
             other => {
                 writeln!(

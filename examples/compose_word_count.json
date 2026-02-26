@@ -1,0 +1,11 @@
+{
+  "app": "word-count",
+  "capabilities": ["io_write"],
+  "nodes": [
+    {"id": "text", "use": "arg_str", "params": {"index": 1}},
+    {"id": "trimmed", "use": "trim_str", "bind": {"text": "text"}},
+    {"id": "space", "use": "const_str", "params": {"value": " "}},
+    {"id": "words", "use": "split_count", "bind": {"text": "trimmed", "delim": "space"}},
+    {"id": "out", "use": "print_num", "bind": {"value": "words"}}
+  ]
+}

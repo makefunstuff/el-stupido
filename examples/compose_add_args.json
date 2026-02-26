@@ -1,0 +1,10 @@
+{
+  "app": "add-args",
+  "capabilities": ["io_write"],
+  "nodes": [
+    {"id": "a", "use": "arg_num", "params": {"index": 1}},
+    {"id": "b", "use": "arg_num", "params": {"index": 2}},
+    {"id": "sum", "use": "add", "bind": {"lhs": "a", "rhs": "b"}},
+    {"id": "out", "use": "print_num", "bind": {"value": "sum"}}
+  ]
+}

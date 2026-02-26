@@ -1,0 +1,11 @@
+app prompt-double
+cap io_read io_write
+
+prompt read_stdin prompt="Enter a number: "
+n parse_num text=@prompt
+two const_num value=2
+double mul lhs=@n rhs=@two
+label const_str value="double = "
+double_str to_string value=@double
+message concat left=@label right=@double_str
+out print_str value=@message

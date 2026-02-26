@@ -9,6 +9,7 @@ el-stupido follows a suckless-style design: small surface area, explicit behavio
 - Make behavior obvious from the manifest; no hidden heuristics.
 - Keep execution bounded and deterministic.
 - Keep the default core domain-agnostic (compute/io/fs only).
+- Prefer compact tape manifests as canonical model-facing input; keep `.esc` and JSON as compatibility inputs.
 
 ## Non-goals
 

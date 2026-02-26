@@ -604,5 +604,370 @@ impl Registry {
             requires: vec![],
             effects: vec!["io_write"],
         });
+
+        self.add(Primitive {
+            id: "arg_num",
+            description: "Read CLI argument as number",
+            params: vec![ParamDef {
+                name: "index",
+                ty: ParamType::F64,
+                required: true,
+            }],
+            binds: vec![],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "arg_str",
+            description: "Read CLI argument as string",
+            params: vec![ParamDef {
+                name: "index",
+                ty: ParamType::F64,
+                required: true,
+            }],
+            binds: vec![],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "env_str",
+            description: "Read environment variable as string",
+            params: vec![ParamDef {
+                name: "name",
+                ty: ParamType::Str,
+                required: true,
+            }],
+            binds: vec![],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "env_str_dyn",
+            description: "Read environment variable using bound name",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "name",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "arg_count",
+            description: "Count of CLI arguments (excluding program name)",
+            params: vec![],
+            binds: vec![],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "format_str",
+            description: "Format string with two placeholders: replaces {1} and {2}",
+            params: vec![ParamDef {
+                name: "template",
+                ty: ParamType::Str,
+                required: true,
+            }],
+            binds: vec![
+                BindDef {
+                    name: "v1",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "v2",
+                    capability: "str",
+                    required: false,
+                },
+            ],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "exit_code",
+            description: "Exit with a numeric code",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "code",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["sink"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "substr",
+            description: "Extract substring by start index and length",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "text",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "start",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "len",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "upper_str",
+            description: "Convert string to uppercase",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "text",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "lower_str",
+            description: "Convert string to lowercase",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "text",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "trim_str",
+            description: "Trim whitespace from both ends of a string",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "text",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "contains_str",
+            description: "Check if string contains a substring",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "text",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "needle",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["bool"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "replace_str",
+            description: "Replace all occurrences of a pattern in a string",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "text",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "pattern",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "replacement",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "split_count",
+            description: "Count fields when splitting string by delimiter",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "text",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "delim",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "split_nth",
+            description: "Get nth field when splitting string by delimiter",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "text",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "delim",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "index",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "mod_num",
+            description: "Modulo (remainder) of two numbers",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "lhs",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "rhs",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "floor",
+            description: "Floor of a number",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "abs",
+            description: "Absolute value of a number",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "lt",
+            description: "Less-than comparison",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "lhs",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "rhs",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["bool"],
+            requires: vec![],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "read_stdin_all",
+            description: "Read all of stdin as a string",
+            params: vec![],
+            binds: vec![],
+            provides: vec!["str"],
+            requires: vec![],
+            effects: vec!["io_read"],
+        });
+
+        self.add(Primitive {
+            id: "append_file",
+            description: "Append UTF-8 string to file",
+            params: vec![ParamDef {
+                name: "path",
+                ty: ParamType::Str,
+                required: true,
+            }],
+            binds: vec![BindDef {
+                name: "content",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["sink"],
+            requires: vec![],
+            effects: vec!["fs_write"],
+        });
     }
 }

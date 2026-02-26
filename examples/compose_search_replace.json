@@ -1,0 +1,11 @@
+{
+  "app": "search-replace",
+  "capabilities": ["io_write"],
+  "nodes": [
+    {"id": "text", "use": "arg_str", "params": {"index": 1}},
+    {"id": "pattern", "use": "arg_str", "params": {"index": 2}},
+    {"id": "replacement", "use": "arg_str", "params": {"index": 3}},
+    {"id": "result", "use": "replace_str", "bind": {"text": "text", "pattern": "pattern", "replacement": "replacement"}},
+    {"id": "out", "use": "print_str", "bind": {"value": "result"}}
+  ]
+}
