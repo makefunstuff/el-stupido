@@ -126,3 +126,13 @@ esc memory relate <existing-hash> <new-hash> variant_of
 - **URL fetch**: `arg_str → concat(base,arg) → http_get_dyn → trim → print_str`
 - **Compute**: `arg_num(1) → arg_num(2) → add → print_num`
 - **Branch**: `arg_num → const_num → gt → select_str(cond,"yes","no") → print_str`
+
+## Recording knowledge
+
+When you discover something important during forging (a gotcha, a workaround, a design choice), record it:
+
+```bash
+esc memory note --kind <discovery|decision|pattern|issue> --context "<project>" --tags "<tags>" "<summary>" "<detail>"
+```
+
+This persists across sessions. Future forging sessions will find it via `esc memory search`.

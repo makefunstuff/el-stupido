@@ -1,10 +1,11 @@
-//! Memory graph — persistent tool knowledge across agent sessions.
+//! Memory graph — persistent tool + contextual knowledge across agent sessions.
 //!
 //! The memory is a graph stored at `~/.esc/memory.json`:
 //! - **Entries** (nodes): one per tool hash, carries goal/tags/pattern/IO summary
 //! - **Edges**: relationships between tools (variant_of, pipes_to, supersedes)
+//! - **Notes**: contextual knowledge (discoveries, decisions, patterns, issues)
 //!
-//! The agent queries this through `esc memory search/show/record` subcommands.
+//! The agent queries this through `esc memory search/show/record/note` subcommands.
 //! It never loads the full graph into context — only the relevant subset.
 
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,8 @@ pub struct MemoryState {
     pub entries: HashMap<String, MemoryEntry>,
     #[serde(default)]
     pub edges: Vec<MemoryEdge>,
+    #[serde(default)]
+    pub notes: HashMap<String, MemoryNote>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +59,30 @@ pub struct MemoryEdge {
     pub note: String,
 }
 
+/// Contextual knowledge entry — discoveries, decisions, patterns, issues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryNote {
+    /// Kind: discovery, decision, pattern, issue
+    pub kind: String,
+    /// One-line summary (indexed for search)
+    pub summary: String,
+    /// Longer explanation
+    #[serde(default)]
+    pub detail: String,
+    /// Project or area context (e.g., "el-stupido", "homelab", "atomic-server")
+    #[serde(default)]
+    pub context: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub created: String,
+    #[serde(default = "default_note_status")]
+    pub status: String,
+}
+
+fn default_note_status() -> String {
+    "active".to_string()
+}
+
 fn memory_path() -> PathBuf {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
@@ -70,11 +97,13 @@ pub fn load() -> MemoryState {
             version: 1,
             entries: HashMap::new(),
             edges: Vec::new(),
+            notes: HashMap::new(),
         }),
         Err(_) => MemoryState {
             version: 1,
             entries: HashMap::new(),
             edges: Vec::new(),
+            notes: HashMap::new(),
         },
     }
 }
@@ -594,6 +623,427 @@ fn is_leap(year: u64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
+// --- Graph-aware recall ---
+
+/// Recall: search + graph traversal. Compact output — LLM drills in with `show`.
+/// Uses atomic-server as graph when available, flat-file fallback.
+pub fn recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
+    if let Some(client) = crate::atomic::AtomicClient::from_env() {
+        match atomic_recall(&client, query, limit) {
+            Ok(results) => return results,
+            Err(e) => eprintln!("warning: atomic-server: {e}"),
+        }
+    }
+    local_recall(query, limit)
+}
+
+/// Graph traversal via atomic-server.
+/// Phase 1: search → tools + notes (direct hits)
+/// Phase 2: search(seed_hashes) → find edge resources → GET connected tools (graph walk)
+fn atomic_recall(
+    client: &crate::atomic::AtomicClient,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<serde_json::Value>, String> {
+    use std::collections::HashSet;
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    // Phase 1: Direct search — tools and notes matching the query
+    let tools = client.search(query, limit)?;
+    let notes = client.search_notes(query, limit)?;
+    let mut seed_hashes: Vec<String> = Vec::new();
+
+    for r in tools {
+        if let Some((hash, entry)) = atomic_resource_to_entry(client, &r) {
+            let short = hash[..12.min(hash.len())].to_string();
+            if seen.insert(short.clone()) {
+                seed_hashes.push(short.clone());
+                results.push(compact_tool(&short, &entry, "direct"));
+            }
+        }
+    }
+
+    for r in notes {
+        if let Some((hash, note)) = atomic_resource_to_note(client, &r) {
+            let short = hash[..12.min(hash.len())].to_string();
+            if seen.insert(format!("n:{short}")) {
+                results.push(compact_note(&short, &note, "direct"));
+            }
+        }
+    }
+
+    // Phase 2: Graph walk — find edges for matched tools, follow links
+    // One search for all seed hashes (tantivy treats spaces as OR)
+    if !seed_hashes.is_empty() {
+        let hash_query = seed_hashes.join(" ");
+        let urls = client.search_urls(&hash_query, 50)?;
+        let edge_prefix = format!("{}/esc/edge/", client.server_url);
+
+        for url in urls {
+            if !url.starts_with(&edge_prefix) {
+                continue;
+            }
+            // Resolve edge resource
+            let r = match client.get(&url) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            let from = r
+                .get(&client.prop_url("edge-from"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let to = r
+                .get(&client.prop_url("edge-to"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let rel = r
+                .get(&client.prop_url("edge-rel"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let from_short = &from[..12.min(from.len())];
+            let to_short = &to[..12.min(to.len())];
+
+            // Which side is ours, which is the other?
+            let (other, via) = if seed_hashes.iter().any(|s| s == from_short) {
+                (to_short, rel.to_string())
+            } else if seed_hashes.iter().any(|s| s == to_short) {
+                (from_short, format!("{rel}←"))
+            } else {
+                continue;
+            };
+
+            if seen.contains(other) {
+                continue;
+            }
+
+            // Follow the link — GET the connected tool by its graph URL
+            let tool_url = client.tool_url(other);
+            if let Ok(tool_r) = client.get(&tool_url) {
+                if let Some((h, entry)) = atomic_resource_to_entry(client, &tool_r) {
+                    let s = h[..12.min(h.len())].to_string();
+                    if seen.insert(s.clone()) {
+                        results.push(compact_tool(&s, &entry, &format!("edge:{via}")));
+                    }
+                }
+            }
+        }
+    }
+
+    results.truncate(limit);
+    Ok(results)
+}
+
+/// Flat-file fallback: search + local edge walk + tag expansion.
+fn local_recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
+    use std::collections::HashSet;
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    let mut seen_tools: HashSet<String> = HashSet::new();
+    let mut seen_notes: HashSet<String> = HashSet::new();
+    let mut all_tags: HashSet<String> = HashSet::new();
+
+    // Phase 1: Direct search
+    for (hash, entry, score) in local_search(query) {
+        let short = hash[..12.min(hash.len())].to_string();
+        for tag in &entry.tags {
+            all_tags.insert(tag.clone());
+        }
+        seen_tools.insert(hash.clone());
+        let mut r = compact_tool(&short, &entry, "direct");
+        r["score"] = serde_json::json!(score);
+        results.push(r);
+    }
+
+    for (hash, note, score) in local_search_notes(query) {
+        let short = hash[..12.min(hash.len())].to_string();
+        for tag in &note.tags {
+            all_tags.insert(tag.clone());
+        }
+        seen_notes.insert(hash.clone());
+        let mut r = compact_note(&short, &note, "direct");
+        r["score"] = serde_json::json!(score);
+        results.push(r);
+    }
+
+    // Phase 2: Edge walk
+    let state = load();
+    let seeds: Vec<String> = seen_tools.iter().cloned().collect();
+    for seed in &seeds {
+        for edge in &state.edges {
+            let (other, rel) = if edge.from == *seed || hash_matches(&edge.from, seed) {
+                (&edge.to, &edge.rel)
+            } else if edge.to == *seed || hash_matches(&edge.to, seed) {
+                (&edge.from, &edge.rel)
+            } else {
+                continue;
+            };
+            if seen_tools.contains(other) {
+                continue;
+            }
+            if let Some(entry) = state.entries.get(other) {
+                seen_tools.insert(other.clone());
+                for tag in &entry.tags {
+                    all_tags.insert(tag.clone());
+                }
+                let short = &other[..12.min(other.len())];
+                results.push(compact_tool(short, entry, &format!("edge:{rel}")));
+            }
+        }
+    }
+
+    // Phase 3: Tag expansion (2+ shared tags)
+    if !all_tags.is_empty() {
+        for (hash, entry) in &state.entries {
+            if seen_tools.contains(hash) {
+                continue;
+            }
+            let shared: Vec<&str> = entry
+                .tags
+                .iter()
+                .filter(|t| all_tags.contains(*t))
+                .map(|s| s.as_str())
+                .collect();
+            if shared.len() >= 2 {
+                seen_tools.insert(hash.clone());
+                let short = &hash[..12.min(hash.len())];
+                results.push(compact_tool(
+                    short,
+                    entry,
+                    &format!("shared_tags:{}", shared.join(",")),
+                ));
+            }
+        }
+
+        for (hash, note) in &state.notes {
+            if seen_notes.contains(hash) {
+                continue;
+            }
+            let shared: Vec<&str> = note
+                .tags
+                .iter()
+                .filter(|t| all_tags.contains(*t))
+                .map(|s| s.as_str())
+                .collect();
+            if shared.len() >= 2 {
+                seen_notes.insert(hash.clone());
+                let short = &hash[..12.min(hash.len())];
+                results.push(compact_note(
+                    short,
+                    note,
+                    &format!("shared_tags:{}", shared.join(",")),
+                ));
+            }
+        }
+    }
+
+    // Sort by score descending (direct hits have score, graph hits don't)
+    results.sort_by(|a, b| {
+        let sa = a["score"].as_u64().unwrap_or(0);
+        let sb = b["score"].as_u64().unwrap_or(0);
+        sb.cmp(&sa)
+    });
+
+    results.truncate(limit);
+    results
+}
+
+/// Compact tool representation — just enough for the LLM to decide what to drill into.
+fn compact_tool(hash: &str, entry: &MemoryEntry, via: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "tool",
+        "hash": hash,
+        "app": entry.app,
+        "goal": entry.goal,
+        "via": via,
+    })
+}
+
+/// Compact note representation.
+fn compact_note(hash: &str, note: &MemoryNote, via: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "note",
+        "hash": hash,
+        "kind": note.kind,
+        "summary": note.summary,
+        "context": note.context,
+        "status": note.status,
+        "via": via,
+    })
+}
+
+// --- Notes: contextual memory ---
+
+/// Compute content-addressed hash for a note (deduplicates same kind+summary).
+pub fn note_hash(kind: &str, summary: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(kind.as_bytes());
+    hasher.update(b":");
+    hasher.update(summary.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Record a contextual note.
+pub fn record_note(kind: &str, summary: &str, detail: &str, context: &str, tags: &[String]) {
+    let hash = note_hash(kind, summary);
+    let mut state = load();
+    let now = now_rfc3339();
+
+    if let Some(existing) = state.notes.get_mut(&hash) {
+        if !detail.is_empty() {
+            existing.detail = detail.to_string();
+        }
+        if !context.is_empty() {
+            existing.context = context.to_string();
+        }
+        for tag in tags {
+            if !existing.tags.contains(tag) {
+                existing.tags.push(tag.clone());
+            }
+        }
+    } else {
+        state.notes.insert(
+            hash.clone(),
+            MemoryNote {
+                kind: kind.to_string(),
+                summary: summary.to_string(),
+                detail: detail.to_string(),
+                context: context.to_string(),
+                tags: tags.to_vec(),
+                created: now,
+                status: "active".to_string(),
+            },
+        );
+    }
+
+    save(&state);
+
+    // Dual-write to atomic
+    if let Some(client) = crate::atomic::AtomicClient::from_env() {
+        let note = state.notes.get(&hash).unwrap();
+        let _ = atomic_record_note(&client, &hash, note);
+    }
+}
+
+/// Update a note's status (active → resolved/superseded).
+pub fn update_note_status(hash: &str, status: &str) {
+    let mut state = load();
+    let full_hash = state.notes.keys().find(|k| k.starts_with(hash)).cloned();
+    if let Some(full_hash) = full_hash {
+        if let Some(note) = state.notes.get_mut(&full_hash) {
+            note.status = status.to_string();
+            let snapshot = note.clone();
+            save(&state);
+            if let Some(client) = crate::atomic::AtomicClient::from_env() {
+                let _ = atomic_record_note(&client, &full_hash, &snapshot);
+            }
+        }
+    }
+}
+
+/// List notes with optional kind/context filters.
+pub fn list_notes(
+    kind: Option<&str>,
+    context: Option<&str>,
+    limit: usize,
+) -> Vec<(String, MemoryNote)> {
+    if let Some(client) = crate::atomic::AtomicClient::from_env() {
+        match atomic_list_notes(&client, kind, context, limit) {
+            Ok(notes) if !notes.is_empty() => return notes,
+            Ok(_) => {}
+            Err(e) => eprintln!("warning: atomic-server: {e}"),
+        }
+    }
+    local_list_notes(kind, context, limit)
+}
+
+fn local_list_notes(
+    kind: Option<&str>,
+    context: Option<&str>,
+    limit: usize,
+) -> Vec<(String, MemoryNote)> {
+    let state = load();
+    let mut notes: Vec<(String, MemoryNote)> = state
+        .notes
+        .into_iter()
+        .filter(|(_, n)| {
+            (kind.is_none() || kind == Some(n.kind.as_str()))
+                && (context.is_none() || context == Some(n.context.as_str()))
+        })
+        .collect();
+    notes.sort_by(|a, b| b.1.created.cmp(&a.1.created));
+    notes.truncate(limit);
+    notes
+}
+
+/// Search notes by fuzzy matching on summary + detail + context + tags.
+pub fn search_notes(query: &str) -> Vec<(String, MemoryNote, usize)> {
+    if let Some(client) = crate::atomic::AtomicClient::from_env() {
+        match atomic_search_notes(&client, query) {
+            Ok(results) => return results,
+            Err(e) => eprintln!("warning: atomic-server: {e}"),
+        }
+    }
+    local_search_notes(query)
+}
+
+fn local_search_notes(query: &str) -> Vec<(String, MemoryNote, usize)> {
+    let state = load();
+    let query_lower = query.to_lowercase();
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+
+    let mut results: Vec<(String, MemoryNote, usize)> = state
+        .notes
+        .into_iter()
+        .filter_map(|(hash, note)| {
+            let score = score_note(&note, &query_words);
+            if score > 0 {
+                Some((hash, note, score))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.2.cmp(&a.2));
+    results
+}
+
+fn score_note(note: &MemoryNote, query_words: &[&str]) -> usize {
+    let mut score = 0;
+    let summary_lower = note.summary.to_lowercase();
+    let detail_lower = note.detail.to_lowercase();
+    let kind_lower = note.kind.to_lowercase();
+    let context_lower = note.context.to_lowercase();
+    let tags_lower: Vec<String> = note.tags.iter().map(|t| t.to_lowercase()).collect();
+
+    for word in query_words {
+        if summary_lower.contains(word) {
+            score += 3;
+        }
+        if detail_lower.contains(word) {
+            score += 2;
+        }
+        if kind_lower == *word {
+            score += 2;
+        }
+        if context_lower.contains(word) {
+            score += 2;
+        }
+        if tags_lower.iter().any(|t| t == word) {
+            score += 3;
+        }
+        if tags_lower.iter().any(|t| t.contains(word)) {
+            score += 1;
+        }
+    }
+    score
+}
+
 // --- Atomic-server backend helpers ---
 
 /// Write a MemoryEntry to atomic-server.
@@ -729,4 +1179,131 @@ pub fn atomic_record_edge(
         "https://atomicdata.dev/properties/parent": client.server_url,
     });
     client.upsert(&subject, &set)
+}
+
+/// Write a MemoryNote to atomic-server.
+pub fn atomic_record_note(
+    client: &crate::atomic::AtomicClient,
+    hash: &str,
+    note: &MemoryNote,
+) -> Result<(), String> {
+    let subject = client.note_url(hash);
+    // name+description indexed by tantivy
+    let search_name = format!(
+        "esc-note {} {} {}",
+        note.kind,
+        note.context,
+        note.tags.join(" ")
+    );
+    let search_desc = format!("{} | {}", note.summary, note.detail);
+    let set = serde_json::json!({
+        "https://atomicdata.dev/properties/name": search_name.trim(),
+        "https://atomicdata.dev/properties/description": search_desc,
+        client.prop_url("note-kind"): note.kind,
+        client.prop_url("note-summary"): note.summary,
+        client.prop_url("note-detail"): note.detail,
+        client.prop_url("note-context"): note.context,
+        client.prop_url("tags"): note.tags.join(","),
+        client.prop_url("created"): note.created,
+        client.prop_url("status"): note.status,
+        "https://atomicdata.dev/properties/isA": [client.class_url("note")],
+        "https://atomicdata.dev/properties/parent": client.server_url,
+    });
+    client.upsert(&subject, &set)
+}
+
+fn atomic_search_notes(
+    client: &crate::atomic::AtomicClient,
+    query: &str,
+) -> Result<Vec<(String, MemoryNote, usize)>, String> {
+    let results = client.search_notes(query, 20)?;
+    let total = results.len();
+    Ok(results
+        .into_iter()
+        .filter_map(|r| atomic_resource_to_note(client, &r))
+        .enumerate()
+        .map(|(i, (hash, note))| (hash, note, total.saturating_sub(i)))
+        .collect())
+}
+
+fn atomic_list_notes(
+    client: &crate::atomic::AtomicClient,
+    kind: Option<&str>,
+    context: Option<&str>,
+    limit: usize,
+) -> Result<Vec<(String, MemoryNote)>, String> {
+    // "esc-note" is in every note's name field, so it matches all notes
+    let query = kind.unwrap_or("esc-note");
+    let results = client.search_notes(query, 50)?;
+    let mut notes: Vec<(String, MemoryNote)> = results
+        .into_iter()
+        .filter_map(|r| atomic_resource_to_note(client, &r))
+        .filter(|(_, n)| {
+            (kind.is_none() || kind == Some(n.kind.as_str()))
+                && (context.is_none() || context == Some(n.context.as_str()))
+        })
+        .collect();
+    notes.sort_by(|a, b| b.1.created.cmp(&a.1.created));
+    notes.truncate(limit);
+    Ok(notes)
+}
+
+fn atomic_resource_to_note(
+    client: &crate::atomic::AtomicClient,
+    r: &serde_json::Value,
+) -> Option<(String, MemoryNote)> {
+    let p = |name| client.prop_url(name);
+    let kind = r
+        .get(&p("note-kind"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let summary = r
+        .get(&p("note-summary"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if kind.is_empty() || summary.is_empty() {
+        return None;
+    }
+    let detail = r
+        .get(&p("note-detail"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let context = r
+        .get(&p("note-context"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tags_str = r.get(&p("tags")).and_then(|v| v.as_str()).unwrap_or("");
+    let tags: Vec<String> = if tags_str.is_empty() {
+        vec![]
+    } else {
+        tags_str.split(',').map(|s| s.trim().to_string()).collect()
+    };
+    let created = r
+        .get(&p("created"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let status = r
+        .get(&p("status"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("active")
+        .to_string();
+
+    let full_hash = note_hash(&kind, &summary);
+    Some((
+        full_hash,
+        MemoryNote {
+            kind,
+            summary,
+            detail,
+            context,
+            tags,
+            created,
+            status,
+        },
+    ))
 }

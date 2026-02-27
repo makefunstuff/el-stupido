@@ -99,8 +99,13 @@ impl AtomicClient {
         self.get(url).is_ok()
     }
 
-    /// Full-text search. Returns resolved resources that live under /esc/tool/.
-    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
+    /// Full-text search filtered by URL prefix. Returns resolved resources.
+    fn search_by_prefix(
+        &self,
+        query: &str,
+        limit: usize,
+        prefix: &str,
+    ) -> Result<Vec<Value>, String> {
         let url = format!(
             "{}/search?q={}&limit={}",
             self.server_url,
@@ -115,11 +120,10 @@ impl AtomicClient {
             .cloned()
             .unwrap_or_default();
 
-        let tool_prefix = format!("{}/esc/tool/", self.server_url);
         let mut resolved = Vec::new();
         for member in members {
             if let Some(url) = member.as_str() {
-                if url.starts_with(&tool_prefix) {
+                if url.starts_with(prefix) {
                     if let Ok(r) = self.get(url) {
                         resolved.push(r);
                     }
@@ -127,6 +131,38 @@ impl AtomicClient {
             }
         }
         Ok(resolved)
+    }
+
+    /// Full-text search for tools (resources under /esc/tool/).
+    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
+        let prefix = format!("{}/esc/tool/", self.server_url);
+        self.search_by_prefix(query, limit, &prefix)
+    }
+
+    /// Full-text search for notes (resources under /esc/note/).
+    pub fn search_notes(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
+        let prefix = format!("{}/esc/note/", self.server_url);
+        self.search_by_prefix(query, limit, &prefix)
+    }
+
+    /// Search and return raw URLs without resolving. Caller filters + resolves selectively.
+    /// This is the cheap operation — one HTTP request, no resource resolution.
+    pub fn search_urls(&self, query: &str, limit: usize) -> Result<Vec<String>, String> {
+        let url = format!(
+            "{}/search?q={}&limit={}",
+            self.server_url,
+            urlenc(query),
+            limit
+        );
+        let result = self.get(&url)?;
+        Ok(result
+            .get("https://atomicdata.dev/properties/endpoint/results")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect())
     }
 
     /// Create a new resource.
@@ -207,93 +243,145 @@ impl AtomicClient {
         format!("{}/esc/edge/{f}-{t}-{rel}", self.server_url)
     }
 
+    pub fn note_url(&self, hash: &str) -> String {
+        let short = &hash[..12.min(hash.len())];
+        format!("{}/esc/note/{short}", self.server_url)
+    }
+
     // --- Schema bootstrap ---
 
     /// Create esc properties + classes on atomic-server. Idempotent.
     pub fn ensure_schema(&self) -> Result<(), String> {
-        if self.exists(&self.prop_url("hash")) {
-            return Ok(());
-        }
-
         let s = &self.server_url;
 
-        let props: &[(&str, &str, &str)] = &[
-            ("hash", "SHA-256 content hash of compiled tool", DT_STRING),
-            ("app", "Tool application name", DT_STRING),
-            ("goal", "Natural language goal description", DT_STRING),
-            ("tags", "Comma-separated search tags", DT_STRING),
-            ("pattern", "Primitive chain summary", DT_STRING),
-            ("io", "Compact IO signature", DT_STRING),
-            ("caps", "Required capabilities (comma-separated)", DT_STRING),
-            ("created", "Creation timestamp (ISO 8601)", DT_STRING),
-            ("last-used", "Last usage timestamp (ISO 8601)", DT_STRING),
-            (
-                "use-count",
-                "Number of times tool has been used",
-                DT_INTEGER,
-            ),
-            ("status", "Tool status: ok or broken", DT_STRING),
-            ("notes", "Free-form notes about the tool", DT_STRING),
-            ("edge-from", "Source tool hash for edge", DT_STRING),
-            ("edge-to", "Target tool hash for edge", DT_STRING),
-            (
-                "edge-rel",
-                "Relationship type: variant_of, pipes_to, supersedes",
-                DT_STRING,
-            ),
-            ("edge-note", "Description of the relationship", DT_STRING),
-        ];
+        // --- Tool schema (sentinel: "hash" property) ---
+        if !self.exists(&self.prop_url("hash")) {
+            let props: &[(&str, &str, &str)] = &[
+                ("hash", "SHA-256 content hash of compiled tool", DT_STRING),
+                ("app", "Tool application name", DT_STRING),
+                ("goal", "Natural language goal description", DT_STRING),
+                ("tags", "Comma-separated search tags", DT_STRING),
+                ("pattern", "Primitive chain summary", DT_STRING),
+                ("io", "Compact IO signature", DT_STRING),
+                ("caps", "Required capabilities (comma-separated)", DT_STRING),
+                ("created", "Creation timestamp (ISO 8601)", DT_STRING),
+                ("last-used", "Last usage timestamp (ISO 8601)", DT_STRING),
+                (
+                    "use-count",
+                    "Number of times tool has been used",
+                    DT_INTEGER,
+                ),
+                (
+                    "status",
+                    "Status: ok, broken, active, resolved, superseded",
+                    DT_STRING,
+                ),
+                ("notes", "Free-form notes about the tool", DT_STRING),
+                ("edge-from", "Source tool hash for edge", DT_STRING),
+                ("edge-to", "Target tool hash for edge", DT_STRING),
+                (
+                    "edge-rel",
+                    "Relationship type: variant_of, pipes_to, supersedes",
+                    DT_STRING,
+                ),
+                ("edge-note", "Description of the relationship", DT_STRING),
+            ];
 
-        for (name, desc, dt) in props {
+            for (name, desc, dt) in props {
+                self.create(
+                    &self.prop_url(name),
+                    &serde_json::json!({
+                        PROP_IS_A: [CLASS_PROPERTY],
+                        PROP_SHORTNAME: format!("esc-{name}"),
+                        PROP_DESCRIPTION: *desc,
+                        PROP_DATATYPE: *dt,
+                        PROP_PARENT: s,
+                    }),
+                )?;
+            }
+
+            let tool_recommended: Vec<String> = [
+                "goal",
+                "tags",
+                "pattern",
+                "io",
+                "caps",
+                "created",
+                "last-used",
+                "use-count",
+                "status",
+                "notes",
+            ]
+            .iter()
+            .map(|n| self.prop_url(n))
+            .collect();
             self.create(
-                &self.prop_url(name),
+                &self.class_url("tool-entry"),
                 &serde_json::json!({
-                    PROP_IS_A: [CLASS_PROPERTY],
-                    PROP_SHORTNAME: format!("esc-{name}"),
-                    PROP_DESCRIPTION: *desc,
-                    PROP_DATATYPE: *dt,
+                    PROP_IS_A: [CLASS_CLASS],
+                    PROP_SHORTNAME: "esc-tool-entry",
+                    PROP_DESCRIPTION: "A compiled tool in the esc memory graph",
+                    PROP_REQUIRES: [self.prop_url("hash"), self.prop_url("app")],
+                    PROP_RECOMMENDS: tool_recommended,
+                    PROP_PARENT: s,
+                }),
+            )?;
+
+            self.create(&self.class_url("tool-edge"), &serde_json::json!({
+                PROP_IS_A: [CLASS_CLASS],
+                PROP_SHORTNAME: "esc-tool-edge",
+                PROP_DESCRIPTION: "A relationship between tools in the esc memory graph",
+                PROP_REQUIRES: [self.prop_url("edge-from"), self.prop_url("edge-to"), self.prop_url("edge-rel")],
+                PROP_RECOMMENDS: [self.prop_url("edge-note")],
+                PROP_PARENT: s,
+            }))?;
+        }
+
+        // --- Note schema (sentinel: "note-kind" property) ---
+        if !self.exists(&self.prop_url("note-kind")) {
+            let note_props: &[(&str, &str, &str)] = &[
+                (
+                    "note-kind",
+                    "Note kind: discovery, decision, pattern, issue",
+                    DT_STRING,
+                ),
+                ("note-summary", "One-line note summary", DT_STRING),
+                ("note-detail", "Longer explanation or detail", DT_STRING),
+                ("note-context", "Project or area context", DT_STRING),
+            ];
+
+            for (name, desc, dt) in note_props {
+                self.create(
+                    &self.prop_url(name),
+                    &serde_json::json!({
+                        PROP_IS_A: [CLASS_PROPERTY],
+                        PROP_SHORTNAME: format!("esc-{name}"),
+                        PROP_DESCRIPTION: *desc,
+                        PROP_DATATYPE: *dt,
+                        PROP_PARENT: s,
+                    }),
+                )?;
+            }
+
+            // note class — reuses tags, created, status from tool schema
+            self.create(
+                &self.class_url("note"),
+                &serde_json::json!({
+                    PROP_IS_A: [CLASS_CLASS],
+                    PROP_SHORTNAME: "esc-note",
+                    PROP_DESCRIPTION: "Contextual knowledge: discoveries, decisions, patterns, issues",
+                    PROP_REQUIRES: [self.prop_url("note-kind"), self.prop_url("note-summary")],
+                    PROP_RECOMMENDS: [
+                        self.prop_url("note-detail"),
+                        self.prop_url("note-context"),
+                        self.prop_url("tags"),
+                        self.prop_url("created"),
+                        self.prop_url("status"),
+                    ],
                     PROP_PARENT: s,
                 }),
             )?;
         }
-
-        // tool-entry class
-        let tool_recommended: Vec<String> = [
-            "goal",
-            "tags",
-            "pattern",
-            "io",
-            "caps",
-            "created",
-            "last-used",
-            "use-count",
-            "status",
-            "notes",
-        ]
-        .iter()
-        .map(|n| self.prop_url(n))
-        .collect();
-        self.create(
-            &self.class_url("tool-entry"),
-            &serde_json::json!({
-                PROP_IS_A: [CLASS_CLASS],
-                PROP_SHORTNAME: "esc-tool-entry",
-                PROP_DESCRIPTION: "A compiled tool in the esc memory graph",
-                PROP_REQUIRES: [self.prop_url("hash"), self.prop_url("app")],
-                PROP_RECOMMENDS: tool_recommended,
-                PROP_PARENT: s,
-            }),
-        )?;
-
-        // tool-edge class
-        self.create(&self.class_url("tool-edge"), &serde_json::json!({
-            PROP_IS_A: [CLASS_CLASS],
-            PROP_SHORTNAME: "esc-tool-edge",
-            PROP_DESCRIPTION: "A relationship between tools in the esc memory graph",
-            PROP_REQUIRES: [self.prop_url("edge-from"), self.prop_url("edge-to"), self.prop_url("edge-rel")],
-            PROP_RECOMMENDS: [self.prop_url("edge-note")],
-            PROP_PARENT: s,
-        }))?;
 
         Ok(())
     }

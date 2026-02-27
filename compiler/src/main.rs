@@ -115,6 +115,14 @@ enum MemoryAction {
         #[arg(long, default_value = "")]
         note: String,
     },
+    /// Graph-aware recall: search + follow edges + tag expansion (compact output)
+    Recall {
+        /// Search query (natural language or keywords)
+        query: String,
+        /// Max results to return
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+    },
     /// Show recent tool forges (newest first)
     Log {
         /// Max entries to show
@@ -125,6 +133,43 @@ enum MemoryAction {
     Related {
         /// Tool hash or hash prefix
         hash: String,
+    },
+    /// Store a contextual note (discovery, decision, pattern, issue)
+    Note {
+        /// Note summary (one line)
+        summary: String,
+        /// Longer detail/explanation (optional)
+        #[arg(default_value = "")]
+        detail: String,
+        /// Note kind: discovery, decision, pattern, issue
+        #[arg(long, default_value = "discovery")]
+        kind: String,
+        /// Context/project area (e.g., "el-stupido", "homelab")
+        #[arg(long, default_value = "")]
+        context: String,
+        /// Comma-separated tags
+        #[arg(long, default_value = "")]
+        tags: String,
+    },
+    /// List contextual notes with optional filters
+    Notes {
+        /// Filter by kind (discovery, decision, pattern, issue)
+        #[arg(long)]
+        kind: Option<String>,
+        /// Filter by context
+        #[arg(long)]
+        context: Option<String>,
+        /// Max entries to show
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+    },
+    /// Resolve a note by hash prefix and update its status
+    Resolve {
+        /// Note hash or hash prefix
+        hash: String,
+        /// New status: resolved, superseded
+        #[arg(long, default_value = "resolved")]
+        status: String,
     },
     /// Create esc schema on atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
     Setup,
@@ -508,36 +553,65 @@ fn main() {
         Cmd::Memory { action } => {
             match action {
                 MemoryAction::Search { query, limit } => {
-                    let results = memory::search(&query);
+                    let tools = memory::search(&query);
+                    let notes = memory::search_notes(&query);
+
+                    let mut items: Vec<serde_json::Value> = Vec::new();
+
+                    for (hash, entry, score) in tools.into_iter().take(limit) {
+                        let binary = cache::bin_path(&hash);
+                        let exists = std::path::Path::new(&binary).exists();
+                        items.push(serde_json::json!({
+                            "type": "tool",
+                            "hash": &hash[..12.min(hash.len())],
+                            "hash_full": hash,
+                            "app": entry.app,
+                            "goal": entry.goal,
+                            "io": entry.io,
+                            "tags": entry.tags,
+                            "pattern": entry.pattern,
+                            "use_count": entry.use_count,
+                            "last_used": entry.last_used,
+                            "status": entry.status,
+                            "binary_exists": exists,
+                            "score": score,
+                        }));
+                    }
+
+                    for (hash, note, score) in notes.into_iter().take(limit) {
+                        items.push(serde_json::json!({
+                            "type": "note",
+                            "hash": &hash[..12.min(hash.len())],
+                            "kind": note.kind,
+                            "summary": note.summary,
+                            "detail": note.detail,
+                            "context": note.context,
+                            "tags": note.tags,
+                            "created": note.created,
+                            "status": note.status,
+                            "score": score,
+                        }));
+                    }
+
+                    // Sort merged results by score descending
+                    items.sort_by(|a, b| {
+                        let sa = a["score"].as_u64().unwrap_or(0);
+                        let sb = b["score"].as_u64().unwrap_or(0);
+                        sb.cmp(&sa)
+                    });
+
+                    if items.is_empty() {
+                        eprintln!("no matches for: {query}");
+                    }
+                    println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                }
+
+                MemoryAction::Recall { query, limit } => {
+                    let results = memory::recall(&query, limit);
                     if results.is_empty() {
                         eprintln!("no matches for: {query}");
-                        // Output empty JSON array for machine consumption
-                        println!("[]");
-                    } else {
-                        let items: Vec<serde_json::Value> = results
-                            .into_iter()
-                            .take(limit)
-                            .map(|(hash, entry, score)| {
-                                let binary = cache::bin_path(&hash);
-                                let exists = std::path::Path::new(&binary).exists();
-                                serde_json::json!({
-                                    "hash": &hash[..12.min(hash.len())],
-                                    "hash_full": hash,
-                                    "app": entry.app,
-                                    "goal": entry.goal,
-                                    "io": entry.io,
-                                    "tags": entry.tags,
-                                    "pattern": entry.pattern,
-                                    "use_count": entry.use_count,
-                                    "last_used": entry.last_used,
-                                    "status": entry.status,
-                                    "binary_exists": exists,
-                                    "score": score,
-                                })
-                            })
-                            .collect();
-                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
                     }
+                    println!("{}", serde_json::to_string_pretty(&results).unwrap());
                 }
 
                 MemoryAction::Show { hash } => {
@@ -694,6 +768,59 @@ fn main() {
                     }
                 }
 
+                MemoryAction::Note { summary, detail, kind, context, tags } => {
+                    let valid_kinds = ["discovery", "decision", "pattern", "issue"];
+                    if !valid_kinds.contains(&kind.as_str()) {
+                        eprintln!("unknown kind: {kind}");
+                        eprintln!("valid: {}", valid_kinds.join(", "));
+                        std::process::exit(1);
+                    }
+                    let tag_list: Vec<String> = if tags.is_empty() {
+                        Vec::new()
+                    } else {
+                        tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                    };
+                    let hash = memory::note_hash(&kind, &summary);
+                    memory::record_note(&kind, &summary, &detail, &context, &tag_list);
+                    eprintln!("noted [{}]: {} ({})", kind, summary, &hash[..12]);
+                }
+
+                MemoryAction::Notes { kind, context, limit } => {
+                    let notes = memory::list_notes(kind.as_deref(), context.as_deref(), limit);
+                    if notes.is_empty() {
+                        eprintln!("no notes");
+                        println!("[]");
+                    } else {
+                        let items: Vec<serde_json::Value> = notes
+                            .into_iter()
+                            .map(|(hash, note)| {
+                                serde_json::json!({
+                                    "hash": &hash[..12.min(hash.len())],
+                                    "kind": note.kind,
+                                    "summary": note.summary,
+                                    "detail": note.detail,
+                                    "context": note.context,
+                                    "tags": note.tags,
+                                    "created": note.created,
+                                    "status": note.status,
+                                })
+                            })
+                            .collect();
+                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                    }
+                }
+
+                MemoryAction::Resolve { hash, status } => {
+                    let valid = ["resolved", "superseded", "active"];
+                    if !valid.contains(&status.as_str()) {
+                        eprintln!("unknown status: {status}");
+                        eprintln!("valid: {}", valid.join(", "));
+                        std::process::exit(1);
+                    }
+                    memory::update_note_status(&hash, &status);
+                    eprintln!("note {} → {status}", &hash[..12.min(hash.len())]);
+                }
+
                 MemoryAction::Setup => {
                     match atomic::AtomicClient::from_env() {
                         Some(client) => {
@@ -737,7 +864,17 @@ fn main() {
                                     fail += 1;
                                 }
                             }
-                            eprintln!("migrated {ok} entries ({fail} failed), {} edges", state.edges.len());
+                            let mut notes_ok = 0usize;
+                            for (hash, note) in &state.notes {
+                                match memory::atomic_record_note(&client, hash, note) {
+                                    Ok(()) => { notes_ok += 1; }
+                                    Err(e) => {
+                                        eprintln!("  skip note {}: {e}", &hash[..12]);
+                                        fail += 1;
+                                    }
+                                }
+                            }
+                            eprintln!("migrated {ok} entries + {notes_ok} notes ({fail} failed), {} edges", state.edges.len());
                         }
                         None => {
                             eprintln!("error: set ESC_ATOMIC_URL and ESC_ATOMIC_KEY");
