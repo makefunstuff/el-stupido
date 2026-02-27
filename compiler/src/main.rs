@@ -223,7 +223,7 @@ fn main() {
                 if let Some(cached) = cache::lookup(&hash) {
                     let (inputs, outputs) = compose::extract_io_contract(&comp);
 
-                    // If goal or tags provided, upsert memory entry (not just touch)
+                    // Upsert memory entry on cache hit if goal or tags provided
                     if !goal.is_empty() || !tags.is_empty() {
                         let pattern = memory::extract_pattern(&comp.nodes);
                         let io = memory::io_signature(&inputs, &outputs);
@@ -242,8 +242,6 @@ fn main() {
                             &comp.capabilities,
                             "",
                         );
-                    } else {
-                        memory::touch(&hash);
                     }
 
                     if machine {
@@ -355,6 +353,13 @@ fn main() {
                             &comp.capabilities,
                             "",
                         );
+
+                        // Auto-note: record the forge as a pattern note
+                        if !goal.is_empty() {
+                            let summary = format!("forged {}: {}", comp.app, goal);
+                            let detail = format!("pattern: {} | io: {} | caps: {}", pattern, io, comp.capabilities.join(","));
+                            memory::record_note("pattern", &summary, &detail, &comp.app, &tag_list);
+                        }
                     }
 
                     if machine {

@@ -2,6 +2,8 @@
 
 You have access to `esc`, a composable primitives compiler. Instead of writing bash scripts or one-off code, you can forge native binaries from small JSON manifests. Compiled tools are cached by content hash and reused automatically.
 
+**You have a persistent brain** via `esc memory`. It stores tools, patterns, and knowledge across sessions and devices. Search it before acting. Write to it when you learn something. Past notes are past-you talking to present-you.
+
 ## When to use esc
 
 Use esc when you need a small, reusable tool that:
@@ -43,13 +45,13 @@ esc expand manifest.json
 
 ### Step 1 — Search memory
 
-Always search first. Never forge what already exists.
+Always search first. Never forge what already exists. Also read any notes — they contain lessons from past sessions.
 
 ```bash
 esc memory search "<keywords from the goal>"
 ```
 
-Returns compact matches: hash, app name, goal, and how found (direct/edge/shared_tags). If a match exists and binary exists, skip to step 5 (run it).
+Returns tools AND notes. If a tool match exists and binary exists, skip to step 4 (run it). If notes match, read them — past-you may have recorded gotchas or patterns.
 
 To inspect a near-match and get its full manifest:
 
@@ -226,3 +228,15 @@ arg_num(1) → arg_num(2) → add → print_num
 ```
 arg_num(1) → const_num(0) → gt → select_str(cond, "positive", "non-positive") → print_str
 ```
+
+## Recording knowledge
+
+Tool forges auto-record pattern notes, but YOU must record insights the compiler can't know:
+
+```bash
+esc memory note --kind <kind> --context "<project>" --tags "<tags>" "<summary>" "<detail>"
+```
+
+Kinds: `discovery` (how/why), `decision` (chose X over Y), `pattern` (to do X, use Y), `issue` (broken/weird + workaround)
+
+**Record when**: you hit an error and figure out the fix, a capability was missing, a manifest needed non-obvious structure, the user corrects you, you learn how a primitive behaves, something surprises you. You're writing to your future self.

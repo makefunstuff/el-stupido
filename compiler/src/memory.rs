@@ -516,26 +516,6 @@ fn atomic_log(
     Ok(entries)
 }
 
-/// Bump use_count and last_used for a tool.
-pub fn touch(hash: &str) {
-    let mut state = load();
-    // Support prefix matching
-    let full_hash = state.entries.keys().find(|k| k.starts_with(hash)).cloned();
-
-    if let Some(full_hash) = full_hash {
-        if let Some(entry) = state.entries.get_mut(&full_hash) {
-            entry.last_used = now_rfc3339();
-            entry.use_count += 1;
-            let snapshot = entry.clone();
-            save(&state);
-            // Dual-write to atomic
-            if let Some(client) = crate::atomic::AtomicClient::from_env() {
-                let _ = atomic_record_entry(&client, &full_hash, &snapshot);
-            }
-        }
-    }
-}
-
 fn hash_matches(full: &str, query: &str) -> bool {
     full.starts_with(query)
 }
