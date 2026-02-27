@@ -76,17 +76,17 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum MemoryAction {
-    /// Search memory for tools matching a query (fuzzy match on goal/app/tags)
+    /// Search memory: graph-aware keyword match + edge walk + tag expansion
     Search {
         /// Search query (natural language or keywords)
         query: String,
         /// Max results to return
-        #[arg(short = 'n', long, default_value = "10")]
+        #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
     },
-    /// Show full details of a remembered tool by hash prefix
+    /// Show full details of a tool or note by hash prefix
     Show {
-        /// Tool hash or hash prefix
+        /// Tool or note hash (prefix match)
         hash: String,
     },
     /// Record a tool forge into memory with semantic context
@@ -99,9 +99,6 @@ enum MemoryAction {
         /// Comma-separated tags for search
         #[arg(long, default_value = "")]
         tags: String,
-        /// Optional notes
-        #[arg(long, default_value = "")]
-        notes: String,
     },
     /// Add a relationship edge between two tools
     Relate {
@@ -115,24 +112,11 @@ enum MemoryAction {
         #[arg(long, default_value = "")]
         note: String,
     },
-    /// Graph-aware recall: search + follow edges + tag expansion (compact output)
-    Recall {
-        /// Search query (natural language or keywords)
-        query: String,
-        /// Max results to return
-        #[arg(short = 'n', long, default_value = "20")]
-        limit: usize,
-    },
     /// Show recent tool forges (newest first)
     Log {
         /// Max entries to show
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
-    },
-    /// Find tools related to a given tool (by edges or shared tags)
-    Related {
-        /// Tool hash or hash prefix
-        hash: String,
     },
     /// Store a contextual note (discovery, decision, pattern, issue)
     Note {
@@ -163,7 +147,7 @@ enum MemoryAction {
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
     },
-    /// Resolve a note by hash prefix and update its status
+    /// Mark a note resolved or superseded
     Resolve {
         /// Note hash or hash prefix
         hash: String,
@@ -173,8 +157,6 @@ enum MemoryAction {
     },
     /// Create esc schema on atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
     Setup,
-    /// Migrate flat-file memory entries to atomic-server
-    Migrate,
 }
 
 #[derive(Subcommand)]
@@ -553,60 +535,6 @@ fn main() {
         Cmd::Memory { action } => {
             match action {
                 MemoryAction::Search { query, limit } => {
-                    let tools = memory::search(&query);
-                    let notes = memory::search_notes(&query);
-
-                    let mut items: Vec<serde_json::Value> = Vec::new();
-
-                    for (hash, entry, score) in tools.into_iter().take(limit) {
-                        let binary = cache::bin_path(&hash);
-                        let exists = std::path::Path::new(&binary).exists();
-                        items.push(serde_json::json!({
-                            "type": "tool",
-                            "hash": &hash[..12.min(hash.len())],
-                            "hash_full": hash,
-                            "app": entry.app,
-                            "goal": entry.goal,
-                            "io": entry.io,
-                            "tags": entry.tags,
-                            "pattern": entry.pattern,
-                            "use_count": entry.use_count,
-                            "last_used": entry.last_used,
-                            "status": entry.status,
-                            "binary_exists": exists,
-                            "score": score,
-                        }));
-                    }
-
-                    for (hash, note, score) in notes.into_iter().take(limit) {
-                        items.push(serde_json::json!({
-                            "type": "note",
-                            "hash": &hash[..12.min(hash.len())],
-                            "kind": note.kind,
-                            "summary": note.summary,
-                            "detail": note.detail,
-                            "context": note.context,
-                            "tags": note.tags,
-                            "created": note.created,
-                            "status": note.status,
-                            "score": score,
-                        }));
-                    }
-
-                    // Sort merged results by score descending
-                    items.sort_by(|a, b| {
-                        let sa = a["score"].as_u64().unwrap_or(0);
-                        let sb = b["score"].as_u64().unwrap_or(0);
-                        sb.cmp(&sa)
-                    });
-
-                    if items.is_empty() {
-                        eprintln!("no matches for: {query}");
-                    }
-                    println!("{}", serde_json::to_string_pretty(&items).unwrap());
-                }
-
-                MemoryAction::Recall { query, limit } => {
                     let results = memory::recall(&query, limit);
                     if results.is_empty() {
                         eprintln!("no matches for: {query}");
@@ -695,7 +623,7 @@ fn main() {
                     }
                 }
 
-                MemoryAction::Record { hash, goal, tags, notes } => {
+                MemoryAction::Record { hash, goal, tags } => {
                     // Resolve hash — must exist in tool cache
                     let tools = cache::list_tools();
                     let found = tools.iter().find(|t| t.hash.starts_with(&hash));
@@ -724,7 +652,7 @@ fn main() {
                                 &pattern,
                                 &io,
                                 &tool.capabilities,
-                                &notes,
+                                "",
                             );
 
                             eprintln!("recorded: {} [{}] — {}", tool.app, &tool.hash[..12], goal);
@@ -862,71 +790,7 @@ fn main() {
                     }
                 }
 
-                MemoryAction::Migrate => {
-                    match atomic::AtomicClient::from_env() {
-                        Some(client) => {
-                            if let Err(e) = client.ensure_schema() {
-                                eprintln!("error creating schema: {e}");
-                                std::process::exit(1);
-                            }
-                            let state = memory::load();
-                            let mut ok = 0usize;
-                            let mut fail = 0usize;
-                            for (hash, entry) in &state.entries {
-                                match memory::atomic_record_entry(&client, hash, entry) {
-                                    Ok(()) => { ok += 1; }
-                                    Err(e) => {
-                                        eprintln!("  skip {}: {e}", &hash[..12]);
-                                        fail += 1;
-                                    }
-                                }
-                            }
-                            for edge in &state.edges {
-                                if let Err(e) = memory::atomic_record_edge(&client, edge) {
-                                    eprintln!("  skip edge {}->{}: {e}", &edge.from[..12], &edge.to[..12]);
-                                    fail += 1;
-                                }
-                            }
-                            let mut notes_ok = 0usize;
-                            for (hash, note) in &state.notes {
-                                match memory::atomic_record_note(&client, hash, note) {
-                                    Ok(()) => { notes_ok += 1; }
-                                    Err(e) => {
-                                        eprintln!("  skip note {}: {e}", &hash[..12]);
-                                        fail += 1;
-                                    }
-                                }
-                            }
-                            eprintln!("migrated {ok} entries + {notes_ok} notes ({fail} failed), {} edges", state.edges.len());
-                        }
-                        None => {
-                            eprintln!("error: set ESC_ATOMIC_URL and ESC_ATOMIC_KEY");
-                            std::process::exit(1);
-                        }
-                    }
-                }
 
-                MemoryAction::Related { hash } => {
-                    let results = memory::related(&hash);
-                    if results.is_empty() {
-                        eprintln!("no related tools for: {hash}");
-                        println!("[]");
-                    } else {
-                        let items: Vec<serde_json::Value> = results
-                            .into_iter()
-                            .map(|(h, entry, rel)| {
-                                serde_json::json!({
-                                    "hash": &h[..12.min(h.len())],
-                                    "app": entry.app,
-                                    "goal": entry.goal,
-                                    "io": entry.io,
-                                    "relationship": rel,
-                                })
-                            })
-                            .collect();
-                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
-                    }
-                }
             }
         }
     }

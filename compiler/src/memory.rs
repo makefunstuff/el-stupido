@@ -274,19 +274,6 @@ pub fn relate(from: &str, to: &str, rel: &str, note: &str) {
     }
 }
 
-/// Search memory by fuzzy matching on goal + app + tags.
-/// Returns entries sorted by relevance score descending.
-/// Uses atomic-server when ESC_ATOMIC_URL is set, falls back to flat-file.
-pub fn search(query: &str) -> Vec<(String, MemoryEntry, usize)> {
-    if let Some(client) = crate::atomic::AtomicClient::from_env() {
-        match atomic_search(&client, query) {
-            Ok(results) => return results,
-            Err(e) => eprintln!("warning: atomic-server: {e}"),
-        }
-    }
-    local_search(query)
-}
-
 fn local_search(query: &str) -> Vec<(String, MemoryEntry, usize)> {
     let state = load();
     let query_lower = query.to_lowercase();
@@ -307,20 +294,6 @@ fn local_search(query: &str) -> Vec<(String, MemoryEntry, usize)> {
 
     results.sort_by(|a, b| b.2.cmp(&a.2));
     results
-}
-
-fn atomic_search(
-    client: &crate::atomic::AtomicClient,
-    query: &str,
-) -> Result<Vec<(String, MemoryEntry, usize)>, String> {
-    let results = client.search(query, 20)?;
-    let total = results.len();
-    Ok(results
-        .into_iter()
-        .filter_map(|r| atomic_resource_to_entry(client, &r))
-        .enumerate()
-        .map(|(i, (hash, entry))| (hash, entry, total.saturating_sub(i)))
-        .collect())
 }
 
 fn atomic_resource_to_entry(
@@ -532,8 +505,8 @@ fn atomic_log(
     client: &crate::atomic::AtomicClient,
     limit: usize,
 ) -> Result<Vec<(String, MemoryEntry)>, String> {
-    // "stdout" appears in every tool's IO signature, matching all entries
-    let results = client.search("stdout", 50)?;
+    // Every tool's name field contains the app name; search broadly
+    let results = client.search("esc", 50)?;
     let mut entries: Vec<(String, MemoryEntry)> = results
         .into_iter()
         .filter_map(|r| atomic_resource_to_entry(client, &r))
@@ -795,9 +768,15 @@ fn local_recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
         }
     }
 
-    // Phase 3: Tag expansion (2+ shared tags)
+    // Phase 3: Tag expansion (2+ shared tags, capped at 3 results to reduce noise)
     if !all_tags.is_empty() {
+        let mut tag_expanded = 0usize;
+        const MAX_TAG_EXPANSION: usize = 3;
+
         for (hash, entry) in &state.entries {
+            if tag_expanded >= MAX_TAG_EXPANSION {
+                break;
+            }
             if seen_tools.contains(hash) {
                 continue;
             }
@@ -815,10 +794,14 @@ fn local_recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
                     entry,
                     &format!("shared_tags:{}", shared.join(",")),
                 ));
+                tag_expanded += 1;
             }
         }
 
         for (hash, note) in &state.notes {
+            if tag_expanded >= MAX_TAG_EXPANSION {
+                break;
+            }
             if seen_notes.contains(hash) {
                 continue;
             }
@@ -836,6 +819,7 @@ fn local_recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
                     note,
                     &format!("shared_tags:{}", shared.join(",")),
                 ));
+                tag_expanded += 1;
             }
         }
     }
@@ -978,17 +962,6 @@ fn local_list_notes(
     notes.sort_by(|a, b| b.1.created.cmp(&a.1.created));
     notes.truncate(limit);
     notes
-}
-
-/// Search notes by fuzzy matching on summary + detail + context + tags.
-pub fn search_notes(query: &str) -> Vec<(String, MemoryNote, usize)> {
-    if let Some(client) = crate::atomic::AtomicClient::from_env() {
-        match atomic_search_notes(&client, query) {
-            Ok(results) => return results,
-            Err(e) => eprintln!("warning: atomic-server: {e}"),
-        }
-    }
-    local_search_notes(query)
 }
 
 fn local_search_notes(query: &str) -> Vec<(String, MemoryNote, usize)> {
@@ -1210,20 +1183,6 @@ pub fn atomic_record_note(
         "https://atomicdata.dev/properties/parent": client.server_url,
     });
     client.upsert(&subject, &set)
-}
-
-fn atomic_search_notes(
-    client: &crate::atomic::AtomicClient,
-    query: &str,
-) -> Result<Vec<(String, MemoryNote, usize)>, String> {
-    let results = client.search_notes(query, 20)?;
-    let total = results.len();
-    Ok(results
-        .into_iter()
-        .filter_map(|r| atomic_resource_to_note(client, &r))
-        .enumerate()
-        .map(|(i, (hash, note))| (hash, note, total.saturating_sub(i)))
-        .collect())
 }
 
 fn atomic_list_notes(

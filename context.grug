@@ -24,7 +24,7 @@ grammar = print GBNF grammar for constrained LLM output
 primitives = list all available primitives with params/binds/provides/requires/effects (--machine for JSON)
 tools = manage tool cache (list, info, forget, clear)
 inspect = read binary metadata trailer (manifest + IO contract + hash)
-memory = query/manage tool memory graph (search, show, record, log, related, relate)
+memory = query/manage tool+note memory graph (search, show, record, relate, log, note, notes, resolve, setup)
 
 [primitives]
 const_num = numeric constant (value:f64) -> provides:num effects:pure
@@ -131,9 +131,8 @@ auth = Ed25519 signed commits via ESC_ATOMIC_URL + ESC_ATOMIC_KEY env vars (~/.c
 reads = prefer atomic-server, fall back to flat-file on error
 writes = dual-write to both atomic-server and flat-file
 schema = 16 properties at /esc/prop/*, 2 classes at /esc/class/*, tools at /esc/tool/<hash>, edges at /esc/edge/*
-recall = esc memory recall "<query>" (graph-aware: search + follow edges + tag expansion, compact output)
-search = esc memory search "<query>" (flat keyword match on goal/app/tags, returns tools + notes)
-show = esc memory show <hash> (lazy-loads full entry + manifest from binary trailer)
+search = esc memory search "<query>" (graph-aware: keyword match + edge walk + tag expansion, compact output)
+show = esc memory show <hash> (full details of a tool or note by hash prefix)
 note = esc memory note --kind <kind> --context "<ctx>" --tags "<tags>" "<summary>" "<detail>"
 notes = esc memory notes [--kind discovery] [--context homelab] (list/filter notes)
 resolve = esc memory resolve <hash> [--status resolved] (mark note resolved/superseded)
@@ -141,9 +140,7 @@ record = esc memory record <hash> --goal "..." --tags "..." (update existing too
 auto_record = esc compose --store --goal "..." --tags "..." (records automatically on successful forge)
 relate = esc memory relate <from> <to> <rel> (add edge: variant_of, pipes_to, supersedes)
 log = esc memory log (recent forges, newest first)
-related = esc memory related <hash> (find tools connected by edges or shared tags)
 setup = esc memory setup (bootstrap atomic-server schema — includes tool + note schemas)
-migrate = esc memory migrate (migrate flat-file entries + notes to atomic-server)
 note_kinds = discovery (technical finding), decision (design choice + rationale), pattern (trigger + fix), issue (open problem)
 note_statuses = active, resolved, superseded
 

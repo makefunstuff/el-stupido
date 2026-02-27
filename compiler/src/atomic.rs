@@ -170,13 +170,6 @@ impl AtomicClient {
         self.do_commit(subject, set, None)
     }
 
-    /// Update an existing resource (fetches previousCommit automatically).
-    pub fn update(&self, subject: &str, set: &Value) -> Result<(), String> {
-        let resource = self.get(subject)?;
-        let prev = resource.get(PROP_LAST_COMMIT).and_then(|v| v.as_str());
-        self.do_commit(subject, set, prev)
-    }
-
     /// Create or update.
     pub fn upsert(&self, subject: &str, set: &Value) -> Result<(), String> {
         match self.get(subject) {
@@ -446,9 +439,9 @@ fn curl_get(url: &str, headers: &[(String, String)]) -> Result<(u16, String), St
     let mut cmd = Command::new("curl");
     cmd.arg("-s")
         .arg("--connect-timeout")
-        .arg("3")
+        .arg("1")
         .arg("--max-time")
-        .arg("10")
+        .arg("5")
         .arg("-w")
         .arg("\n%{http_code}")
         .arg("-H")
@@ -465,9 +458,9 @@ fn curl_post(url: &str, body: &str, headers: &[(String, String)]) -> Result<(u16
     let mut cmd = Command::new("curl");
     cmd.arg("-s")
         .arg("--connect-timeout")
-        .arg("3")
+        .arg("1")
         .arg("--max-time")
-        .arg("10")
+        .arg("5")
         .arg("-w")
         .arg("\n%{http_code}")
         .arg("-X")
