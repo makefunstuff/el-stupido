@@ -33,6 +33,7 @@ esc primitives --machine   # JSON output
 # Forge a tool from a manifest
 esc compose manifest.json -o ./my-tool --store   # compile + cache
 esc compose manifest.json --machine --store      # JSON output (for self-correction)
+esc compose manifest.json --machine --store --goal "what it does" --tags "tag1,tag2"  # compile + cache + auto-record to memory
 
 # See generated Rust code without compiling
 esc expand manifest.json
@@ -84,11 +85,13 @@ Rules:
 - **bind**: references earlier node IDs only. Data flows forward.
 - Keep it minimal — fewest nodes possible
 
-### Step 4 — Compile with --machine --store
+### Step 4 — Compile + record in one command
 
 ```bash
-esc compose manifest.json --machine --store
+esc compose /tmp/esc_<name>.json --machine --store --goal "<natural language goal>" --tags "<comma,separated,tags>"
 ```
+
+The `--goal` and `--tags` flags auto-record the tool to memory (flat-file + atomic-server) on successful compile. No separate record step needed.
 
 If it succeeds:
 ```json
@@ -105,7 +108,7 @@ Fix the manifest according to the hint and retry. Max 3 attempts.
 ### Step 5 — Run the tool
 
 ```bash
-/home/.../.esc/bin/abc123 arg1 arg2
+~/.esc/bin/<hash> arg1 arg2
 ```
 
 Or if you used `-o ./name`:
@@ -113,21 +116,15 @@ Or if you used `-o ./name`:
 ./name arg1 arg2
 ```
 
-### Step 6 — Record to memory
+### Step 6 — Record edges (optional)
 
-After a successful forge, always record:
-
-```bash
-esc memory record <hash> --goal "<natural language goal>" --tags "<comma,separated,tags>"
-```
+Recording happens automatically via `--goal`/`--tags` in step 4. Use `esc memory record` only to **update** an existing entry with richer metadata.
 
 If the new tool is a variant of an existing one, add an edge:
 
 ```bash
 esc memory relate <existing-hash> <new-hash> variant_of
 ```
-
-This lets future sessions skip re-forging.
 
 ## Primitives cheat sheet
 

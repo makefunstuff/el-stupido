@@ -46,15 +46,17 @@ esc memory related <hash-prefix>
 
 ### 4. Forge a new tool
 
-Write a JSON manifest file, then compile:
+Write a JSON manifest file to `/tmp/esc_<name>.json`, then compile+record in one command:
 
 ```bash
-esc compose manifest.json --machine --store
+esc compose /tmp/esc_<name>.json --machine --store --goal "<natural language goal>" --tags "<comma,separated,tags>"
 ```
+
+The `--goal` and `--tags` flags auto-record the tool to memory (flat-file + atomic-server) on successful compile. No separate record step needed.
 
 **On success**, you get:
 ```json
-{"status":"ok","binary":"/home/.../.esc/bin/<hash>","hash":"<hash>","app":"<name>"}
+{"status":"ok","binary":"~/.esc/bin/<hash>","hash":"<hash>","app":"<name>"}
 ```
 
 **On error**, you get a structured hint:
@@ -70,13 +72,9 @@ Fix the manifest according to the hint. Max 3 retries.
 ~/.esc/bin/<hash> arg1 arg2
 ```
 
-### 6. Record to memory
+### 6. Record edges (optional)
 
-After a successful forge, always record:
-
-```bash
-esc memory record <hash> --goal "<natural language goal>" --tags "<comma,separated,tags>"
-```
+Recording happens automatically via `--goal`/`--tags` in step 4. Use `esc memory record` only to **update** an existing entry with richer metadata.
 
 If the new tool is a variant of an existing one, add an edge:
 

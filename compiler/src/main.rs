@@ -1,3 +1,4 @@
+mod atomic;
 mod compose;
 mod emit;
 mod grammar;
@@ -36,6 +37,12 @@ enum Cmd {
         /// Store compiled binary in tool cache (~/.esc/)
         #[arg(long)]
         store: bool,
+        /// Goal description for memory (used with --store)
+        #[arg(long, default_value = "")]
+        goal: String,
+        /// Comma-separated tags for memory search (used with --store)
+        #[arg(long, default_value = "")]
+        tags: String,
     },
     /// Print generated Rust source without compiling
     Expand {
@@ -119,6 +126,10 @@ enum MemoryAction {
         /// Tool hash or hash prefix
         hash: String,
     },
+    /// Create esc schema on atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
+    Setup,
+    /// Migrate flat-file memory entries to atomic-server
+    Migrate,
 }
 
 #[derive(Subcommand)]
@@ -144,7 +155,7 @@ fn main() {
     let registry = primitive::Registry::new();
 
     match cli.cmd {
-        Cmd::Compose { manifest, output, machine, store } => {
+        Cmd::Compose { manifest, output, machine, store, goal, tags } => {
             let json = match fs::read_to_string(&manifest) {
                 Ok(s) => s,
                 Err(e) => {
@@ -278,14 +289,19 @@ fn main() {
                             rust_size: rs_len as u64,
                         });
 
-                        // Auto-record to memory graph
+                        // Auto-record to memory graph with goal/tags from CLI
                         let pattern = memory::extract_pattern(&comp.nodes);
                         let io = memory::io_signature(&inputs, &outputs);
+                        let tag_list: Vec<String> = if tags.is_empty() {
+                            Vec::new()
+                        } else {
+                            tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                        };
                         memory::record(
                             &hash,
                             &comp.app,
-                            "",  // goal — agent fills this later via `esc memory record`
-                            &[],
+                            &goal,
+                            &tag_list,
                             &pattern,
                             &io,
                             &comp.capabilities,
@@ -525,71 +541,61 @@ fn main() {
                 }
 
                 MemoryAction::Show { hash } => {
-                    let state = memory::load();
-                    let found = state
-                        .entries
-                        .iter()
-                        .find(|(h, _)| h.starts_with(&hash));
-
-                    match found {
-                        Some((full_hash, entry)) => {
-                            let binary = cache::bin_path(full_hash);
-                            let manifest = if std::path::Path::new(&binary).exists() {
-                                cache::read_trailer(&binary)
-                                    .ok()
-                                    .and_then(|v| v["manifest"].as_str().map(|s| s.to_string()))
-                            } else {
-                                None
-                            };
-
-                            // Find edges involving this tool
-                            let edges: Vec<&memory::MemoryEdge> = state
-                                .edges
-                                .iter()
-                                .filter(|e| e.from == *full_hash || e.to == *full_hash)
-                                .collect();
-
-                            let mut result = serde_json::json!({
-                                "hash": full_hash,
-                                "app": entry.app,
-                                "goal": entry.goal,
-                                "tags": entry.tags,
-                                "pattern": entry.pattern,
-                                "io": entry.io,
-                                "caps": entry.caps,
-                                "created": entry.created,
-                                "last_used": entry.last_used,
-                                "use_count": entry.use_count,
-                                "status": entry.status,
-                                "notes": entry.notes,
-                                "binary": binary,
-                                "binary_exists": std::path::Path::new(&binary).exists(),
-                            });
-
-                            if let Some(m) = manifest {
-                                result["manifest"] = serde_json::Value::String(m);
-                            }
-
-                            if !edges.is_empty() {
-                                result["edges"] = serde_json::json!(edges
-                                    .iter()
-                                    .map(|e| serde_json::json!({
-                                        "from": &e.from[..12.min(e.from.len())],
-                                        "to": &e.to[..12.min(e.to.len())],
-                                        "rel": e.rel,
-                                        "note": e.note,
-                                    }))
-                                    .collect::<Vec<_>>());
-                            }
-
-                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
-                        }
-                        None => {
+                    // Try atomic-server first, then flat-file
+                    let (full_hash, entry) = memory::atomic_show(&hash)
+                        .or_else(|| {
+                            let state = memory::load();
+                            state.entries.into_iter().find(|(h, _)| h.starts_with(&hash))
+                        })
+                        .unwrap_or_else(|| {
                             eprintln!("not in memory: {hash}");
                             eprintln!("hint: record it with: esc memory record <hash> --goal \"...\"");
                             std::process::exit(1);
-                        }
+                        });
+
+                    let binary = cache::bin_path(&full_hash);
+                    let manifest = if std::path::Path::new(&binary).exists() {
+                        cache::read_trailer(&binary)
+                            .ok()
+                            .and_then(|v| v["manifest"].as_str().map(|s| s.to_string()))
+                    } else {
+                        None
+                    };
+
+                    let edges = memory::related(&hash);
+
+                    let mut result = serde_json::json!({
+                        "hash": full_hash,
+                        "app": entry.app,
+                        "goal": entry.goal,
+                        "tags": entry.tags,
+                        "pattern": entry.pattern,
+                        "io": entry.io,
+                        "caps": entry.caps,
+                        "created": entry.created,
+                        "last_used": entry.last_used,
+                        "use_count": entry.use_count,
+                        "status": entry.status,
+                        "notes": entry.notes,
+                        "binary": binary,
+                        "binary_exists": std::path::Path::new(&binary).exists(),
+                    });
+
+                    if let Some(m) = manifest {
+                        result["manifest"] = serde_json::Value::String(m);
                     }
+
+                    if !edges.is_empty() {
+                        result["edges"] = serde_json::json!(edges
+                            .iter()
+                            .map(|(h, _, rel)| serde_json::json!({
+                                "hash": &h[..12.min(h.len())],
+                                "relationship": rel,
+                            }))
+                            .collect::<Vec<_>>());
+                    }
+
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
                 }
 
                 MemoryAction::Record { hash, goal, tags, notes } => {
@@ -685,6 +691,58 @@ fn main() {
                             })
                             .collect();
                         println!("{}", serde_json::to_string_pretty(&items).unwrap());
+                    }
+                }
+
+                MemoryAction::Setup => {
+                    match atomic::AtomicClient::from_env() {
+                        Some(client) => {
+                            match client.ensure_schema() {
+                                Ok(()) => eprintln!("schema created on {}", client.server_url),
+                                Err(e) => {
+                                    eprintln!("error: {e}");
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                        None => {
+                            eprintln!("error: set ESC_ATOMIC_URL and ESC_ATOMIC_KEY");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                MemoryAction::Migrate => {
+                    match atomic::AtomicClient::from_env() {
+                        Some(client) => {
+                            if let Err(e) = client.ensure_schema() {
+                                eprintln!("error creating schema: {e}");
+                                std::process::exit(1);
+                            }
+                            let state = memory::load();
+                            let mut ok = 0usize;
+                            let mut fail = 0usize;
+                            for (hash, entry) in &state.entries {
+                                match memory::atomic_record_entry(&client, hash, entry) {
+                                    Ok(()) => { ok += 1; }
+                                    Err(e) => {
+                                        eprintln!("  skip {}: {e}", &hash[..12]);
+                                        fail += 1;
+                                    }
+                                }
+                            }
+                            for edge in &state.edges {
+                                if let Err(e) = memory::atomic_record_edge(&client, edge) {
+                                    eprintln!("  skip edge {}->{}: {e}", &edge.from[..12], &edge.to[..12]);
+                                    fail += 1;
+                                }
+                            }
+                            eprintln!("migrated {ok} entries ({fail} failed), {} edges", state.edges.len());
+                        }
+                        None => {
+                            eprintln!("error: set ESC_ATOMIC_URL and ESC_ATOMIC_KEY");
+                            std::process::exit(1);
+                        }
                     }
                 }
 

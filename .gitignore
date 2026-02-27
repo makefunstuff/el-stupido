@@ -14,3 +14,10 @@ models/
 # python
 __pycache__/
 .ruff_cache/
+
+# secrets / credentials — never commit these
+.env
+.env.*
+*.pem
+*.key
+atomic-config.toml

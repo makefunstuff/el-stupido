@@ -78,10 +78,12 @@ compose = compiler/src/compose.rs (graph manifest parsing + typed validation + c
 emit = compiler/src/emit.rs (Rust code emitter from validated graph, core primitives only)
 grammar = compiler/src/grammar.rs (GBNF grammar auto-generation from registry)
 cache = compiler/src/cache.rs (tool cache: SHA-256 hash, registry, binary trailer read/write)
-memory = compiler/src/memory.rs (persistent tool memory graph: entries + edges + search + record)
+memory = compiler/src/memory.rs (persistent tool memory graph: entries + edges + search + record, atomic-server backend)
+atomic = compiler/src/atomic.rs (Ed25519 signed commits, curl HTTP client, schema bootstrap, atomic-server integration)
 agent = agent/esc_agent.py (autonomous agent loop POC: goal -> compile -> cache -> invoke)
 embed_exp = agent/embedding_experiment.py (structural vs embedding similarity experiment)
 forge_agent = .opencode/agents/forge.md (opencode subagent for tool forging via @forge)
+global_agent = ~/.config/opencode/opencode.json (global prompt: every session knows about esc + memory)
 
 [examples]
 sum = examples/compose_sum.json (pure arithmetic + stdout)
@@ -124,13 +126,20 @@ hg = http_get (url as string param)
 hd = http_get_dyn (url as bind ref)
 
 [memory]
-state = ~/.esc/memory.json (graph: entries keyed by hash + edges between tools)
+backend = atomic-server at 192.168.1.128:9884 (primary), ~/.esc/memory.json (flat-file fallback)
+auth = Ed25519 signed commits via ESC_ATOMIC_URL + ESC_ATOMIC_KEY env vars (~/.config/environment.d/esc.conf)
+reads = prefer atomic-server, fall back to flat-file on error
+writes = dual-write to both atomic-server and flat-file
+schema = 16 properties at /esc/prop/*, 2 classes at /esc/class/*, tools at /esc/tool/<hash>, edges at /esc/edge/*
 search = esc memory search "<query>" (fuzzy match on goal/app/tags, returns compact index)
 show = esc memory show <hash> (lazy-loads full entry + manifest from binary trailer)
-record = esc memory record <hash> --goal "..." --tags "..." (record a forge)
+record = esc memory record <hash> --goal "..." --tags "..." (update existing entry metadata)
+auto_record = esc compose --store --goal "..." --tags "..." (records automatically on successful forge)
 relate = esc memory relate <from> <to> <rel> (add edge: variant_of, pipes_to, supersedes)
 log = esc memory log (recent forges, newest first)
 related = esc memory related <hash> (find tools connected by edges or shared tags)
+setup = esc memory setup (bootstrap atomic-server schema)
+migrate = esc memory migrate (migrate flat-file entries to atomic-server)
 
 [notes]
 readme = DO NOT MODIFY README.md (human-written)
