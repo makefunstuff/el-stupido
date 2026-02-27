@@ -112,7 +112,7 @@ enum MemoryAction {
         #[arg(long, default_value = "")]
         note: String,
     },
-    /// Show recent tool forges (newest first)
+    /// Recent activity: tools + notes, newest first
     Log {
         /// Max entries to show
         #[arg(short = 'n', long, default_value = "10")]
@@ -723,26 +723,11 @@ fn main() {
                 }
 
                 MemoryAction::Log { limit } => {
-                    let entries = memory::log(limit);
-                    if entries.is_empty() {
+                    let items = memory::log(limit);
+                    if items.is_empty() {
                         eprintln!("memory is empty");
-                        println!("[]");
-                    } else {
-                        let items: Vec<serde_json::Value> = entries
-                            .into_iter()
-                            .map(|(hash, entry)| {
-                                serde_json::json!({
-                                    "hash": &hash[..12.min(hash.len())],
-                                    "app": entry.app,
-                                    "goal": entry.goal,
-                                    "io": entry.io,
-                                    "use_count": entry.use_count,
-                                    "last_used": entry.last_used,
-                                })
-                            })
-                            .collect();
-                        println!("{}", serde_json::to_string_pretty(&items).unwrap());
                     }
+                    println!("{}", serde_json::to_string_pretty(&items).unwrap());
                 }
 
                 MemoryAction::Note { summary, detail, kind, context, tags } => {

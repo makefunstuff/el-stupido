@@ -485,35 +485,103 @@ pub fn related(hash: &str) -> Vec<(String, MemoryEntry, String)> {
     results
 }
 
-/// Log: return entries sorted by last_used descending, limited to N.
+/// Unified activity log: tools + notes merged by time, newest first.
 /// Uses atomic-server when configured, falls back to flat-file.
-pub fn log(limit: usize) -> Vec<(String, MemoryEntry)> {
+pub fn log(limit: usize) -> Vec<serde_json::Value> {
     if let Some(client) = crate::atomic::AtomicClient::from_env() {
         match atomic_log(&client, limit) {
-            Ok(entries) => return entries,
+            Ok(items) => return items,
             Err(e) => eprintln!("warning: atomic-server: {e}"),
         }
     }
+    local_log(limit)
+}
+
+fn local_log(limit: usize) -> Vec<serde_json::Value> {
     let state = load();
-    let mut entries: Vec<(String, MemoryEntry)> = state.entries.into_iter().collect();
-    entries.sort_by(|a, b| b.1.last_used.cmp(&a.1.last_used));
-    entries.truncate(limit);
-    entries
+    let mut items: Vec<serde_json::Value> = Vec::new();
+
+    for (hash, entry) in &state.entries {
+        items.push(serde_json::json!({
+            "type": "tool",
+            "hash": &hash[..12.min(hash.len())],
+            "app": entry.app,
+            "goal": entry.goal,
+            "time": &entry.last_used,
+            "use_count": entry.use_count,
+        }));
+    }
+
+    for (hash, note) in &state.notes {
+        if note.status == "resolved" || note.status == "superseded" {
+            continue;
+        }
+        items.push(serde_json::json!({
+            "type": "note",
+            "hash": &hash[..12.min(hash.len())],
+            "kind": note.kind,
+            "summary": note.summary,
+            "context": note.context,
+            "time": &note.created,
+        }));
+    }
+
+    items.sort_by(|a, b| {
+        let ta = a["time"].as_str().unwrap_or("");
+        let tb = b["time"].as_str().unwrap_or("");
+        tb.cmp(ta)
+    });
+    items.truncate(limit);
+    items
 }
 
 fn atomic_log(
     client: &crate::atomic::AtomicClient,
     limit: usize,
-) -> Result<Vec<(String, MemoryEntry)>, String> {
-    // Every tool's name field contains the app name; search broadly
-    let results = client.search("esc", 50)?;
-    let mut entries: Vec<(String, MemoryEntry)> = results
-        .into_iter()
-        .filter_map(|r| atomic_resource_to_entry(client, &r))
-        .collect();
-    entries.sort_by(|a, b| b.1.last_used.cmp(&a.1.last_used));
-    entries.truncate(limit);
-    Ok(entries)
+) -> Result<Vec<serde_json::Value>, String> {
+    // Fetch tools
+    let tool_results = client.search("esc", 50)?;
+    let mut items: Vec<serde_json::Value> = Vec::new();
+
+    for r in &tool_results {
+        if let Some((hash, entry)) = atomic_resource_to_entry(client, r) {
+            items.push(serde_json::json!({
+                "type": "tool",
+                "hash": &hash[..12.min(hash.len())],
+                "app": entry.app,
+                "goal": entry.goal,
+                "time": &entry.last_used,
+                "use_count": entry.use_count,
+            }));
+        }
+    }
+
+    // Fetch notes
+    if let Ok(note_results) = client.search_notes("esc", 50) {
+        for r in &note_results {
+            if let Some((hash, note)) = atomic_resource_to_note(client, r) {
+                if note.status == "resolved" || note.status == "superseded" {
+                    continue;
+                }
+                items.push(serde_json::json!({
+                    "type": "note",
+                    "hash": &hash[..12.min(hash.len())],
+                    "kind": note.kind,
+                    "summary": note.summary,
+                    "context": note.context,
+                    "time": &note.created,
+                }));
+            }
+        }
+    }
+
+    items.sort_by(|a, b| {
+        let ta = a["time"].as_str().unwrap_or("");
+        let tb = b["time"].as_str().unwrap_or("");
+        tb.cmp(ta)
+    });
+    items.truncate(limit);
+    Ok(items)
 }
 
 fn hash_matches(full: &str, query: &str) -> bool {
