@@ -49,7 +49,7 @@ Always search first. Never forge what already exists.
 esc memory search "<keywords from the goal>"
 ```
 
-Returns compact matches: hash, app name, goal, IO signature, tags, score. If a match exists and `binary_exists` is true, skip to step 5 (run it).
+Returns compact matches: hash, app name, goal, and how found (direct/edge/shared_tags). If a match exists and binary exists, skip to step 5 (run it).
 
 To inspect a near-match and get its full manifest:
 
@@ -57,13 +57,7 @@ To inspect a near-match and get its full manifest:
 esc memory show <hash-prefix>
 ```
 
-To find related tools:
-
-```bash
-esc memory related <hash-prefix>
-```
-
-### Step 3 — Write a manifest
+### Step 2 — Write a manifest
 
 A manifest is a JSON object with three fields:
 
@@ -85,13 +79,13 @@ Rules:
 - **bind**: references earlier node IDs only. Data flows forward.
 - Keep it minimal — fewest nodes possible
 
-### Step 4 — Compile + record in one command
+### Step 3 — Compile + record in one command
 
 ```bash
 esc compose /tmp/esc_<name>.json --machine --store --goal "<natural language goal>" --tags "<comma,separated,tags>"
 ```
 
-The `--goal` and `--tags` flags auto-record the tool to memory (flat-file + atomic-server) on successful compile. No separate record step needed.
+**IMPORTANT**: `--goal` and `--tags` are REQUIRED with `--store`. Always provide both. They auto-record the tool to memory on both fresh compiles and cache hits.
 
 If it succeeds:
 ```json
@@ -105,7 +99,7 @@ If it fails, you get structured error + hint:
 
 Fix the manifest according to the hint and retry. Max 3 attempts.
 
-### Step 5 — Run the tool
+### Step 4 — Run the tool
 
 ```bash
 ~/.esc/bin/<hash> arg1 arg2
@@ -116,9 +110,7 @@ Or if you used `-o ./name`:
 ./name arg1 arg2
 ```
 
-### Step 6 — Record edges (optional)
-
-Recording happens automatically via `--goal`/`--tags` in step 4. Use `esc memory record` only to **update** an existing entry with richer metadata.
+### Step 5 — Record edges (optional)
 
 If the new tool is a variant of an existing one, add an edge:
 
