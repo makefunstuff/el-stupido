@@ -615,61 +615,84 @@ fn main() {
                 }
 
                 MemoryAction::Show { hash } => {
-                    // Try atomic-server first, then flat-file
-                    let (full_hash, entry) = memory::atomic_show(&hash)
+                    // Try tool first (atomic → flat-file), then note (flat-file)
+                    let tool = memory::atomic_show(&hash)
                         .or_else(|| {
                             let state = memory::load();
                             state.entries.into_iter().find(|(h, _)| h.starts_with(&hash))
-                        })
-                        .unwrap_or_else(|| {
-                            eprintln!("not in memory: {hash}");
-                            eprintln!("hint: record it with: esc memory record <hash> --goal \"...\"");
-                            std::process::exit(1);
                         });
 
-                    let binary = cache::bin_path(&full_hash);
-                    let manifest = if std::path::Path::new(&binary).exists() {
-                        cache::read_trailer(&binary)
-                            .ok()
-                            .and_then(|v| v["manifest"].as_str().map(|s| s.to_string()))
+                    if let Some((full_hash, entry)) = tool {
+                        let binary = cache::bin_path(&full_hash);
+                        let manifest = if std::path::Path::new(&binary).exists() {
+                            cache::read_trailer(&binary)
+                                .ok()
+                                .and_then(|v| v["manifest"].as_str().map(|s| s.to_string()))
+                        } else {
+                            None
+                        };
+
+                        let edges = memory::related(&hash);
+
+                        let mut result = serde_json::json!({
+                            "type": "tool",
+                            "hash": full_hash,
+                            "app": entry.app,
+                            "goal": entry.goal,
+                            "tags": entry.tags,
+                            "pattern": entry.pattern,
+                            "io": entry.io,
+                            "caps": entry.caps,
+                            "created": entry.created,
+                            "last_used": entry.last_used,
+                            "use_count": entry.use_count,
+                            "status": entry.status,
+                            "notes": entry.notes,
+                            "binary": binary,
+                            "binary_exists": std::path::Path::new(&binary).exists(),
+                        });
+
+                        if let Some(m) = manifest {
+                            result["manifest"] = serde_json::Value::String(m);
+                        }
+
+                        if !edges.is_empty() {
+                            result["edges"] = serde_json::json!(edges
+                                .iter()
+                                .map(|(h, _, rel)| serde_json::json!({
+                                    "hash": &h[..12.min(h.len())],
+                                    "relationship": rel,
+                                }))
+                                .collect::<Vec<_>>());
+                        }
+
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
                     } else {
-                        None
-                    };
+                        // Try notes
+                        let state = memory::load();
+                        let note = state.notes.into_iter().find(|(h, _)| h.starts_with(&hash));
 
-                    let edges = memory::related(&hash);
-
-                    let mut result = serde_json::json!({
-                        "hash": full_hash,
-                        "app": entry.app,
-                        "goal": entry.goal,
-                        "tags": entry.tags,
-                        "pattern": entry.pattern,
-                        "io": entry.io,
-                        "caps": entry.caps,
-                        "created": entry.created,
-                        "last_used": entry.last_used,
-                        "use_count": entry.use_count,
-                        "status": entry.status,
-                        "notes": entry.notes,
-                        "binary": binary,
-                        "binary_exists": std::path::Path::new(&binary).exists(),
-                    });
-
-                    if let Some(m) = manifest {
-                        result["manifest"] = serde_json::Value::String(m);
+                        match note {
+                            Some((full_hash, note)) => {
+                                let result = serde_json::json!({
+                                    "type": "note",
+                                    "hash": full_hash,
+                                    "kind": note.kind,
+                                    "summary": note.summary,
+                                    "detail": note.detail,
+                                    "context": note.context,
+                                    "tags": note.tags,
+                                    "created": note.created,
+                                    "status": note.status,
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            }
+                            None => {
+                                eprintln!("not in memory: {hash}");
+                                std::process::exit(1);
+                            }
+                        }
                     }
-
-                    if !edges.is_empty() {
-                        result["edges"] = serde_json::json!(edges
-                            .iter()
-                            .map(|(h, _, rel)| serde_json::json!({
-                                "hash": &h[..12.min(h.len())],
-                                "relationship": rel,
-                            }))
-                            .collect::<Vec<_>>());
-                    }
-
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
                 }
 
                 MemoryAction::Record { hash, goal, tags, notes } => {
