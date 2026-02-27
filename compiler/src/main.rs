@@ -221,11 +221,32 @@ fn main() {
 
             if store {
                 if let Some(cached) = cache::lookup(&hash) {
-                    // Bump use_count in memory on cache hit
-                    memory::touch(&hash);
+                    let (inputs, outputs) = compose::extract_io_contract(&comp);
+
+                    // If goal or tags provided, upsert memory entry (not just touch)
+                    if !goal.is_empty() || !tags.is_empty() {
+                        let pattern = memory::extract_pattern(&comp.nodes);
+                        let io = memory::io_signature(&inputs, &outputs);
+                        let tag_list: Vec<String> = if tags.is_empty() {
+                            Vec::new()
+                        } else {
+                            tags.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                        };
+                        memory::record(
+                            &hash,
+                            &comp.app,
+                            &goal,
+                            &tag_list,
+                            &pattern,
+                            &io,
+                            &comp.capabilities,
+                            "",
+                        );
+                    } else {
+                        memory::touch(&hash);
+                    }
 
                     if machine {
-                        let (inputs, outputs) = compose::extract_io_contract(&comp);
                         let result = serde_json::json!({
                             "status": "ok",
                             "app": comp.app,
