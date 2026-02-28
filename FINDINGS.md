@@ -1,7 +1,7 @@
 # Research Findings: el-stupido
 
-**Date**: 2026-02-23
-**Status**: Thesis partially disproven, redirected to more valuable discovery
+**Date**: 2026-02-23 — 2026-02-28
+**Status**: Project killed. Postmortem below.
 
 ## Executive Summary
 
@@ -845,3 +845,213 @@ system works as designed — small models generate structured specs, the
 compiler expands them to native binaries. The remaining work is engineering:
 inline constant flattening, auto-reordering, and multi-example prompts would
 push pass rates toward 100% without increasing model size.
+
+---
+
+## Round 9: The Agent, The Shell, and The Kill
+
+**Date**: 2026-02-27 — 2026-02-28
+
+After 8 rounds validating the compose pipeline, two new modules were built:
+an **agent** (think→act→observe loop) and an **LLM shell** (natural language
+command line). Both worked. Both were useless.
+
+### Finding 29: Sub-3B Models on CPU Have a Physics Floor
+
+The agent module (789 lines of Rust) implemented 12 speed optimizations:
+streaming output, heuristic routing, warm model keepalive, response caching,
+parallel tool execution, prefill token control, mmap model loading, reduced
+context windows, batch-mode processing, speculative routing, predictive
+prefetch, and connection pooling.
+
+After all 12 optimizations, the simplest possible query — "what is my
+hostname" — took **4.8 seconds warm**. The same command in bash takes **2ms**.
+That's 2,400x slower.
+
+This is not an engineering problem. It's physics. A 1.5B parameter model on a
+CPU (i5-8350U, no GPU) has a floor of ~2-3 seconds per inference pass. No
+amount of caching, routing, or architectural cleverness changes the speed of
+matrix multiplication on silicon that wasn't designed for it.
+
+**The shell and agent are dead ends on CPU hardware.** They require either:
+- A GPU (which violates the project's "runs on anything" philosophy), or
+- A model small enough to be fast but too small to reason (sub-500M), or
+- An API call to a remote LLM (which makes the whole local-first premise moot)
+
+There is no fourth option.
+
+### Finding 30: The Compose Pipeline Reinvents Bash
+
+During a critical review of `primitive.rs` and `emit.rs`, the following was
+discovered: the compose pipeline's shell primitives compile to this Rust code:
+
+```rust
+Command::new("sh").args(&["-c", "the_command"])
+```
+
+The primitives and their bash equivalents:
+
+| Primitive | What it actually does |
+|---|---|
+| `shell` | `sh -c "command"` |
+| `shell_dyn` | `sh -c "$variable"` |
+| `shell_pipe` | `sh -c "cmd1 \| cmd2"` |
+| `shell_input` | `echo "$input" \| sh -c "command"` |
+| `read_file` | `cat` |
+| `write_file` | `tee` or `>` |
+| `http_get` | `curl` |
+| `count_lines` | `wc -l` |
+| `list_dir` | `ls` |
+| `env_get` | `echo $VAR` |
+
+The compiled output is a Rust binary that calls `sh -c`. Three layers of
+indirection — JSON manifest → Rust source → compiled binary → `sh -c` — to
+do what a shell script does in one layer.
+
+The non-shell primitives (math, logic, string operations, conditionals) do
+produce genuine compiled code. But the expansion ratio for these is **1.8x**
+(modest), not the 66x reported in Finding 3. That 66x came from the earlier
+codebook system which compiled a DSL to C — a fundamentally different and more
+powerful approach that was abandoned during the Rust rewrite.
+
+**If your compiled output shells out to `sh -c`, you have reinvented bash
+with extra steps.**
+
+### Finding 31: The Project Violated Its Own Philosophy
+
+SUCKLESS.md (the project's design manifesto) contains these principles:
+
+> "No agent runtime or orchestration layer"
+
+Then `agent.rs` was built — an agent runtime with an orchestration layer.
+
+> "Prefer deletion over feature growth"
+
+Then 4 layers were added: compose, assist, agent, shell. Each with its own
+code path, its own LLM interaction pattern, its own error handling.
+
+> "One thing done perfectly rather than many things done adequately"
+
+The compose pipeline does one thing. The assist, agent, and shell are three
+different UIs for similar LLM interactions with separate implementations.
+
+The project grew faster than its design principles could constrain it. The
+suckless philosophy was aspirational, not operational.
+
+### Finding 32: What Small Models Are Actually Good For
+
+Research during the shell/agent failure investigation revealed a clear taxonomy:
+
+**Small models (sub-3B) are good at:**
+- Classification and routing (intent detection, sentiment, PII flagging)
+- Structured extraction (JSON from text, entity extraction)
+- Single-shot function selection (pick one tool from a list)
+- Constrained generation (fill a known schema, not open-ended)
+- Batch/offline processing where latency is irrelevant
+
+**Small models (sub-3B) are bad at:**
+- Open-ended reasoning or multi-step planning
+- Conversational agents or interactive shells
+- Anything requiring sub-second response times on CPU
+- Tasks where the user is waiting in a loop
+
+Google's Gemma 3 270M (August 2025) was released specifically for the first
+category — task-specific fine-tuning for classification and extraction, not
+conversation. NVIDIA and Distil Labs both position SLMs as narrow specialist
+nodes within larger systems, not as standalone agents.
+
+The compose pipeline's assist module (NL → JSON manifest → compile) is the
+one use case that fits: single-shot structured extraction with constrained
+decoding. The agent and shell do not fit.
+
+---
+
+## Postmortem: Project Kill Decision
+
+**Date**: 2026-02-28
+**Decision**: Kill the entire project.
+
+### What was genuinely novel
+
+Two findings survive as real contributions:
+
+1. **Codebook expansion** (Finding 3): A 267-token DSL spec compiled to a
+   17,622-token C program — 66x expansion. This demonstrated that tiny
+   declarative specs can produce large working programs. However, this was
+   the DSL-to-C compiler, not the current Rust compose pipeline.
+
+2. **Constrained decoding + small models** (Finding 4): JSON schema
+   structured output made sub-4B models 9x better at generating correct
+   programs (0.4/5 → 3.6/5). This is a real technique with real applications.
+
+Both findings are validated. Neither requires this project to continue
+existing. They're techniques, not products.
+
+### What was wasted effort
+
+- The Rust compose pipeline: works correctly, produces binaries, but the
+  shell primitives make it a bash wrapper and the math primitives have
+  modest expansion. The genuinely interesting codebook system was the
+  earlier DSL-to-C approach.
+- The agent module: 789 lines proving that LLM loops on CPU are too slow.
+- The shell module: proving that "natural language bash" is slower than bash.
+- The assist module: the one viable use case, but it assists in generating
+  manifests for a pipeline that reinvents bash.
+- 55+ primitives: about 40 of which are wrappers around shell commands.
+- The 177-entry hardcoded command allowlist in shell.rs.
+
+### Lessons learned
+
+1. **Benchmark the premise before building the system.** A single timed
+   inference call on day one would have shown the 2-3 second CPU floor.
+   Instead, 789 lines of agent code were written to discover physics.
+
+2. **If your compiled output calls `sh -c`, stop.** You're adding
+   complexity without adding capability. A shell script is already compiled
+   to `sh -c` — that's what it is.
+
+3. **"Suckless" means knowing when to delete the whole thing.** The hardest
+   application of "prefer deletion over feature growth" is deleting the
+   project itself. The philosophy was right; the project failed to follow it.
+
+4. **Small models are classifiers, not conversationalists.** Use them for
+   routing, extraction, and classification. Don't put them in interactive
+   loops where humans wait for responses.
+
+5. **The interesting work was the earliest work.** The DSL-to-C codebook
+   compiler with 66x expansion was more novel than everything built after
+   it. The Rust rewrite made the system more robust but less interesting.
+
+6. **Validate the full chain, not just the middle.** The compose pipeline
+   works perfectly in isolation. But "JSON → Rust → binary → sh -c" is a
+   longer path to the same destination as "bash script."
+
+### What would be worth doing instead
+
+If the codebook expansion and constrained decoding findings were pursued
+in a new project, the viable directions are:
+
+- **Narrow classifiers**: Fine-tune sub-1B models for specific routing
+  tasks (intent detection, command classification, PII flagging). No
+  interactive loop — batch processing or single-shot inference.
+- **DSL-to-native compilation**: Return to the Finding 3 approach. A small
+  model generates a tiny DSL spec; a compiler expands it to real native
+  code (not shell wrappers). The expansion should come from the compiler's
+  knowledge, not from calling `sh -c`.
+- **Structured extraction pipelines**: Use constrained decoding to extract
+  structured data from unstructured text. The model fills a schema; the
+  schema is the product. No agent loop needed.
+
+None of these require an agent, a shell, or a compose pipeline with 55
+primitives. They require a model, a schema, and a compiler that generates
+real code.
+
+### Final state
+
+- 3 commits on main (compose pipeline, assist module, math primitives)
+- 2 uncommitted modules (agent.rs, shell.rs) — dead code, not committed
+- 847 lines of findings across 8 research rounds, plus this postmortem
+- 23 working example manifests
+- A memory graph note recording the kill decision
+
+The project is dead. The findings survive.

@@ -1,0 +1,15 @@
+{
+  "generated": "2026-03-01T00:00:00Z",
+  "source": "~/.esc/context/history.jsonl",
+  "status": "no_history_file",
+  "note": "No context history.jsonl exists yet — ~/.esc/context/ directory not created. Context session is empty (turn 13, 0 slots, 0 archived). No compactions to perform.",
+  "context_state": {
+    "turn": 13,
+    "tokens_used": 0,
+    "token_budget": 100000,
+    "active_slots": 0,
+    "archived_slots": 0,
+    "wisdom_entries": 0
+  },
+  "compactions": []
+}

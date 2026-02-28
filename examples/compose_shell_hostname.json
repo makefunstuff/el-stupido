@@ -1,8 +1,0 @@
-{
-  "app": "hostname_demo",
-  "capabilities": ["shell_exec", "io_write"],
-  "nodes": [
-    { "id": "cmd", "use": "shell", "params": { "cmd": "hostname" } },
-    { "id": "out", "use": "print_str", "bind": { "value": "cmd" } }
-  ]
-}

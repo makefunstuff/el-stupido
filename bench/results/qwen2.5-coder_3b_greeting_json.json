@@ -1,1 +1,0 @@
-{"app":"greet","capabilities":["io_write"],"nodes":[{"id":"a","use":"arg_str","params":{"index":1}},{"id":"b","use":"const_str","params":{"value":"Hello, "}},"id=","use=","concat","bind={","lhs=","b","rhs=","a"  ],"id=":"out","use":"print_str","bind={":"value=","c":"}]}<|im_start|>\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n

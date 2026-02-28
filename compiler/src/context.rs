@@ -10,7 +10,6 @@
 //! persisted to the memory graph as permanent knowledge. The machine accumulates wisdom
 //! across sessions, models, and providers.
 //!
-//! Dual-write: flat-file (offline fallback) + atomic-server (permanent graph, searchable).
 //!
 //! Slot lifecycle: hot (active) → warm (aging) → cold (summary only) → archived (memory graph)
 
@@ -290,80 +289,6 @@ fn slot_id(n: u32) -> String {
     format!("s{:03}", n)
 }
 
-// --- Atomic dual-write helpers ---
-
-/// Write a context slot to atomic-server.
-fn atomic_write_slot(session_id: &str, slot: &Slot) {
-    let client = match crate::atomic::AtomicClient::from_env() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let subject = client.ctx_slot_url(session_id, &slot.id);
-    // name + description get indexed by tantivy for full-text search
-    let search_name = format!(
-        "esc-ctx {} {} {}",
-        slot.kind.label(),
-        slot.state.label(),
-        &slot.id
-    );
-    let content = slot.effective_content();
-    let search_desc = if content.len() > 200 {
-        &content[..200]
-    } else {
-        content
-    };
-
-    let mut set = serde_json::json!({
-        "https://atomicdata.dev/properties/name": search_name,
-        "https://atomicdata.dev/properties/description": search_desc,
-        client.prop_url("ctx-slot-id"): slot.id,
-        client.prop_url("ctx-session"): session_id,
-        client.prop_url("ctx-kind"): slot.kind.label(),
-        client.prop_url("ctx-state"): slot.state.label(),
-        client.prop_url("ctx-content"): slot.content,
-        client.prop_url("ctx-tokens"): slot.tokens,
-        client.prop_url("ctx-born"): slot.born,
-        client.prop_url("ctx-touched"): slot.touched,
-        client.prop_url("ctx-touch-count"): slot.touch_count,
-        client.prop_url("ctx-wisdom"): if slot.wisdom_persisted { "true" } else { "false" },
-        "https://atomicdata.dev/properties/isA": [client.class_url("context-slot")],
-        "https://atomicdata.dev/properties/parent": client.server_url,
-    });
-
-    if let Some(ref summary) = slot.summary {
-        set[client.prop_url("ctx-summary")] = serde_json::Value::String(summary.clone());
-    }
-
-    let _ = client.upsert(&subject, &set);
-}
-
-/// Write session metadata to atomic-server.
-fn atomic_write_session(session: &Session) {
-    let client = match crate::atomic::AtomicClient::from_env() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let subject = client.ctx_session_url(&session.id);
-    let total_tokens: u32 = session.slots.iter().map(|s| s.tokens).sum();
-    let set = serde_json::json!({
-        "https://atomicdata.dev/properties/name": format!("esc-session {}", session.id),
-        "https://atomicdata.dev/properties/description": format!(
-            "turn {} | {} slots | {} archived | {} wisdom",
-            session.turn, session.slots.len(), session.archived_count, session.wisdom_count
-        ),
-        client.prop_url("ctx-session"): session.id,
-        client.prop_url("ctx-tokens"): total_tokens,
-        client.prop_url("ctx-born"): 0,
-        client.prop_url("ctx-touched"): session.turn,
-        "https://atomicdata.dev/properties/isA": [client.class_url("context-slot")],
-        "https://atomicdata.dev/properties/parent": client.server_url,
-    });
-
-    let _ = client.upsert(&subject, &set);
-}
-
 // --- Internal: tick (advance turn + apply policies) ---
 
 fn tick(session: &mut Session) -> Vec<Transition> {
@@ -454,9 +379,6 @@ fn extract_wisdom(session: &mut Session) -> Vec<WisdomExtracted> {
         );
 
         slot.wisdom_persisted = true;
-
-        // Dual-write the slot with wisdom flag
-        atomic_write_slot(&session_id, slot);
 
         extracted.push(WisdomExtracted {
             slot: slot.id.clone(),
@@ -624,7 +546,6 @@ pub fn init(budget: u32) -> Session {
         wisdom_count: 0,
     };
     save(&session);
-    atomic_write_session(&session);
     session
 }
 
@@ -660,9 +581,6 @@ pub fn add(kind: SlotKind, content: &str) -> Result<(String, u32), String> {
         update_count: 0,
     };
 
-    // Dual-write to atomic
-    atomic_write_slot(&session.id, &slot);
-
     session.slots.push(slot);
     session.next_slot += 1;
 
@@ -673,7 +591,6 @@ pub fn add(kind: SlotKind, content: &str) -> Result<(String, u32), String> {
 /// Mark a slot as still relevant. Promotes back to hot. Increments touch_count.
 pub fn touch(slot_id: &str) -> Result<(), String> {
     let mut session = load().ok_or("no active session")?;
-    let session_id = session.id.clone();
     let slot = session
         .slots
         .iter_mut()
@@ -685,9 +602,6 @@ pub fn touch(slot_id: &str) -> Result<(), String> {
     if slot.state != SlotState::Hot {
         slot.state = SlotState::Hot;
     }
-
-    // Dual-write
-    atomic_write_slot(&session_id, slot);
 
     save(&session);
     Ok(())
@@ -709,7 +623,6 @@ pub fn observe() -> Result<ObserveResult, String> {
     let slot_count = session.slots.len();
 
     save(&session);
-    atomic_write_session(&session);
 
     Ok(ObserveResult {
         turn: session.turn,
@@ -727,7 +640,6 @@ pub fn observe() -> Result<ObserveResult, String> {
 /// Replace slot content with a summary. Returns (old_tokens, new_tokens).
 pub fn compact(slot_id: &str, summary: &str) -> Result<(u32, u32), String> {
     let mut session = load().ok_or("no active session")?;
-    let session_id = session.id.clone();
     let slot = session
         .slots
         .iter_mut()
@@ -738,9 +650,6 @@ pub fn compact(slot_id: &str, summary: &str) -> Result<(u32, u32), String> {
     slot.summary = Some(summary.to_string());
     slot.tokens = estimate_tokens(summary);
     let new_tokens = slot.tokens;
-
-    // Dual-write
-    atomic_write_slot(&session_id, slot);
 
     save(&session);
     Ok((old_tokens, new_tokens))
@@ -787,7 +696,6 @@ pub fn archive(slot_id: &str) -> Result<(String, String), String> {
     session.slots.remove(idx);
     session.archived_count += 1;
     save(&session);
-    atomic_write_session(&session);
 
     Ok((hash[..12].to_string(), note_kind.to_string()))
 }
@@ -830,7 +738,6 @@ pub fn assemble() -> Result<String, String> {
         0.0
     };
     save(&session);
-    atomic_write_session(&session);
 
     // --- Build contextual reasoning output ---
 
@@ -1141,7 +1048,6 @@ pub struct IngestResult {
 /// Promotes to hot, clears summary, increments update_count.
 pub fn update(slot_id: &str, content: &str, source: Option<&str>) -> Result<(u32, u32), String> {
     let mut session = load().ok_or("no active session")?;
-    let session_id = session.id.clone();
 
     let content = if content.len() > MAX_CONTENT_BYTES {
         &content[..MAX_CONTENT_BYTES]
@@ -1167,7 +1073,6 @@ pub fn update(slot_id: &str, content: &str, source: Option<&str>) -> Result<(u32
     }
     let new_tokens = slot.tokens;
 
-    atomic_write_slot(&session_id, slot);
     save(&session);
 
     Ok((old_tokens, new_tokens))
@@ -1190,7 +1095,6 @@ pub fn ingest(
     source: Option<&str>,
 ) -> Result<IngestResult, String> {
     let mut session = load().ok_or("no active session — run `esc context init` first")?;
-    let session_id = session.id.clone();
 
     let text = text.trim();
     if text.is_empty() {
@@ -1227,7 +1131,6 @@ pub fn ingest(
             previous_tokens: Some(old_tokens),
         };
 
-        atomic_write_slot(&session_id, &session.slots[idx]);
         save(&session);
         return Ok(result);
     }
@@ -1255,7 +1158,6 @@ pub fn ingest(
         update_count: 0,
     };
 
-    atomic_write_slot(&session_id, &slot);
     session.slots.push(slot);
     session.next_slot += 1;
     save(&session);
@@ -1414,6 +1316,7 @@ pub fn watch() -> Result<WatchResult, String> {
 }
 
 /// Reset the feed (clear feed file and cursor). For session cleanup.
+#[allow(dead_code)]
 pub fn feed_clear() {
     let _ = fs::remove_file(feed_path());
     let _ = fs::remove_file(cursor_path());
@@ -1421,7 +1324,7 @@ pub fn feed_clear() {
 
 /// Search memory graph for knowledge augmentation.
 /// The model decides when to call this and what to incorporate.
-/// Searches across tools, notes, AND context history in atomic-server.
+/// Searches notes in memory graph.
 pub fn recall(query: &str, limit: usize) -> serde_json::Value {
     let results = crate::memory::recall(query, limit);
     serde_json::json!({

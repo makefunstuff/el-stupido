@@ -4,8 +4,9 @@
 //!   ESC_ATOMIC_URL  — server base URL (e.g. http://192.168.1.128:9884)
 //!   ESC_ATOMIC_KEY  — agent private key (base64 Ed25519)
 //!
-//! HTTP via curl subprocess (same pattern as generated tools).
-//! Ed25519 signing compiled in (required for atomic-data commits).
+//! Uses two query mechanisms:
+//!   /search — full-text search (tantivy, indexes name+description)
+//!   /query  — structured property+value filtering (sled indexes, server-side)
 
 use base64::prelude::*;
 use ed25519_dalek::{Signer, SigningKey};
@@ -34,7 +35,6 @@ const CLASS_PROPERTY: &str = "https://atomicdata.dev/classes/Property";
 const CLASS_CLASS: &str = "https://atomicdata.dev/classes/Class";
 
 const DT_STRING: &str = "https://atomicdata.dev/datatypes/string";
-const DT_INTEGER: &str = "https://atomicdata.dev/datatypes/integer";
 
 pub struct AtomicClient {
     pub server_url: String,
@@ -99,13 +99,11 @@ impl AtomicClient {
         self.get(url).is_ok()
     }
 
-    /// Full-text search filtered by URL prefix. Returns resolved resources.
-    fn search_by_prefix(
-        &self,
-        query: &str,
-        limit: usize,
-        prefix: &str,
-    ) -> Result<Vec<Value>, String> {
+    // --- Querying ---
+
+    /// Full-text search via /search endpoint (tantivy).
+    /// Returns resolved resources matching the note URL prefix.
+    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
         let url = format!(
             "{}/search?q={}&limit={}",
             self.server_url,
@@ -120,10 +118,11 @@ impl AtomicClient {
             .cloned()
             .unwrap_or_default();
 
+        let prefix = format!("{}/esc/note/", self.server_url);
         let mut resolved = Vec::new();
         for member in members {
             if let Some(url) = member.as_str() {
-                if url.starts_with(prefix) {
+                if url.starts_with(&prefix) {
                     if let Ok(r) = self.get(url) {
                         resolved.push(r);
                     }
@@ -133,37 +132,60 @@ impl AtomicClient {
         Ok(resolved)
     }
 
-    /// Full-text search for tools (resources under /esc/tool/).
-    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
-        let prefix = format!("{}/esc/tool/", self.server_url);
-        self.search_by_prefix(query, limit, &prefix)
-    }
-
-    /// Full-text search for notes (resources under /esc/note/).
-    pub fn search_notes(&self, query: &str, limit: usize) -> Result<Vec<Value>, String> {
-        let prefix = format!("{}/esc/note/", self.server_url);
-        self.search_by_prefix(query, limit, &prefix)
-    }
-
-    /// Search and return raw URLs without resolving. Caller filters + resolves selectively.
-    /// This is the cheap operation — one HTTP request, no resource resolution.
-    pub fn search_urls(&self, query: &str, limit: usize) -> Result<Vec<String>, String> {
-        let url = format!(
-            "{}/search?q={}&limit={}",
+    /// Structured query via /query endpoint (sled indexes, server-side filtering).
+    /// property + value filtering, optional sort, pagination.
+    pub fn query(
+        &self,
+        property: &str,
+        value: &str,
+        sort_by: Option<&str>,
+        sort_desc: bool,
+        limit: usize,
+    ) -> Result<Vec<Value>, String> {
+        let mut url = format!(
+            "{}/query?property={}&value={}&page_size={}",
             self.server_url,
-            urlenc(query),
+            urlenc(property),
+            urlenc(value),
             limit
         );
+        if let Some(sort) = sort_by {
+            url.push_str(&format!("&sort_by={}", urlenc(sort)));
+        }
+        if sort_desc {
+            url.push_str("&sort_desc=true");
+        }
+
         let result = self.get(&url)?;
-        Ok(result
-            .get("https://atomicdata.dev/properties/endpoint/results")
+
+        let members = result
+            .get("https://atomicdata.dev/properties/collection/members")
             .and_then(|v| v.as_array())
             .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect())
+            .unwrap_or_default();
+
+        // Members are already resolved resources (inline objects)
+        Ok(members)
     }
+
+    /// Query all resources of a given class. Convenience over query(isA, class_url).
+    pub fn query_class(
+        &self,
+        class_name: &str,
+        sort_by: Option<&str>,
+        sort_desc: bool,
+        limit: usize,
+    ) -> Result<Vec<Value>, String> {
+        self.query(
+            PROP_IS_A,
+            &self.class_url(class_name),
+            sort_by,
+            sort_desc,
+            limit,
+        )
+    }
+
+    // --- Writes ---
 
     /// Create a new resource.
     pub fn create(&self, subject: &str, set: &Value) -> Result<(), String> {
@@ -184,7 +206,6 @@ impl AtomicClient {
     fn do_commit(&self, subject: &str, set: &Value, previous: Option<&str>) -> Result<(), String> {
         let ts = now_millis();
 
-        // Fields to sign (no @id, no signature)
         let mut fields = serde_json::Map::new();
         fields.insert(PROP_CREATED_AT.into(), Value::Number(ts.into()));
         fields.insert(PROP_IS_A.into(), serde_json::json!([CLASS_COMMIT]));
@@ -225,146 +246,45 @@ impl AtomicClient {
         format!("{}/esc/class/{name}", self.server_url)
     }
 
-    pub fn tool_url(&self, hash: &str) -> String {
-        let short = &hash[..12.min(hash.len())];
-        format!("{}/esc/tool/{short}", self.server_url)
-    }
-
-    pub fn edge_url(&self, from: &str, to: &str, rel: &str) -> String {
-        let f = &from[..12.min(from.len())];
-        let t = &to[..12.min(to.len())];
-        format!("{}/esc/edge/{f}-{t}-{rel}", self.server_url)
-    }
-
     pub fn note_url(&self, hash: &str) -> String {
         let short = &hash[..12.min(hash.len())];
         format!("{}/esc/note/{short}", self.server_url)
     }
 
-    pub fn ctx_slot_url(&self, session_id: &str, slot_id: &str) -> String {
-        format!("{}/esc/ctx/{session_id}/{slot_id}", self.server_url)
-    }
-
-    pub fn ctx_session_url(&self, session_id: &str) -> String {
-        format!("{}/esc/ctx/{session_id}", self.server_url)
-    }
-
     // --- Schema bootstrap ---
 
-    /// Create esc properties + classes on atomic-server. Idempotent.
+    /// Create esc note properties + class on atomic-server. Idempotent.
     pub fn ensure_schema(&self) -> Result<(), String> {
         let s = &self.server_url;
 
-        // --- Tool schema (sentinel: "hash" property) ---
-        if !self.exists(&self.prop_url("hash")) {
-            let props: &[(&str, &str, &str)] = &[
-                ("hash", "SHA-256 content hash of compiled tool", DT_STRING),
-                ("app", "Tool application name", DT_STRING),
-                ("goal", "Natural language goal description", DT_STRING),
-                ("tags", "Comma-separated search tags", DT_STRING),
-                ("pattern", "Primitive chain summary", DT_STRING),
-                ("io", "Compact IO signature", DT_STRING),
-                ("caps", "Required capabilities (comma-separated)", DT_STRING),
-                ("created", "Creation timestamp (ISO 8601)", DT_STRING),
-                ("last-used", "Last usage timestamp (ISO 8601)", DT_STRING),
-                (
-                    "use-count",
-                    "Number of times tool has been used",
-                    DT_INTEGER,
-                ),
-                (
-                    "status",
-                    "Status: ok, broken, active, resolved, superseded",
-                    DT_STRING,
-                ),
-                ("notes", "Free-form notes about the tool", DT_STRING),
-                ("edge-from", "Source tool hash for edge", DT_STRING),
-                ("edge-to", "Target tool hash for edge", DT_STRING),
-                (
-                    "edge-rel",
-                    "Relationship type: variant_of, pipes_to, supersedes",
-                    DT_STRING,
-                ),
-                ("edge-note", "Description of the relationship", DT_STRING),
-            ];
-
-            for (name, desc, dt) in props {
-                self.create(
-                    &self.prop_url(name),
-                    &serde_json::json!({
-                        PROP_IS_A: [CLASS_PROPERTY],
-                        PROP_SHORTNAME: format!("esc-{name}"),
-                        PROP_DESCRIPTION: *desc,
-                        PROP_DATATYPE: *dt,
-                        PROP_PARENT: s,
-                    }),
-                )?;
-            }
-
-            let tool_recommended: Vec<String> = [
-                "goal",
-                "tags",
-                "pattern",
-                "io",
-                "caps",
-                "created",
-                "last-used",
-                "use-count",
-                "status",
-                "notes",
-            ]
-            .iter()
-            .map(|n| self.prop_url(n))
-            .collect();
-            self.create(
-                &self.class_url("tool-entry"),
-                &serde_json::json!({
-                    PROP_IS_A: [CLASS_CLASS],
-                    PROP_SHORTNAME: "esc-tool-entry",
-                    PROP_DESCRIPTION: "A compiled tool in the esc memory graph",
-                    PROP_REQUIRES: [self.prop_url("hash"), self.prop_url("app")],
-                    PROP_RECOMMENDS: tool_recommended,
-                    PROP_PARENT: s,
-                }),
-            )?;
-
-            self.create(&self.class_url("tool-edge"), &serde_json::json!({
-                PROP_IS_A: [CLASS_CLASS],
-                PROP_SHORTNAME: "esc-tool-edge",
-                PROP_DESCRIPTION: "A relationship between tools in the esc memory graph",
-                PROP_REQUIRES: [self.prop_url("edge-from"), self.prop_url("edge-to"), self.prop_url("edge-rel")],
-                PROP_RECOMMENDS: [self.prop_url("edge-note")],
-                PROP_PARENT: s,
-            }))?;
-        }
-
-        // --- Note schema (sentinel: "note-kind" property) ---
+        // Note schema (sentinel: "note-kind" property)
         if !self.exists(&self.prop_url("note-kind")) {
-            let note_props: &[(&str, &str, &str)] = &[
+            let note_props: &[(&str, &str)] = &[
                 (
                     "note-kind",
                     "Note kind: discovery, decision, pattern, issue",
-                    DT_STRING,
                 ),
-                ("note-summary", "One-line note summary", DT_STRING),
-                ("note-detail", "Longer explanation or detail", DT_STRING),
-                ("note-context", "Project or area context", DT_STRING),
+                ("note-summary", "One-line note summary"),
+                ("note-detail", "Longer explanation or detail"),
+                ("note-context", "Project or area context"),
+                ("tags", "Comma-separated search tags"),
+                ("created", "Creation timestamp (ISO 8601)"),
+                ("status", "Status: active, resolved, superseded"),
             ];
 
-            for (name, desc, dt) in note_props {
+            for (name, desc) in note_props {
                 self.create(
                     &self.prop_url(name),
                     &serde_json::json!({
                         PROP_IS_A: [CLASS_PROPERTY],
                         PROP_SHORTNAME: format!("esc-{name}"),
                         PROP_DESCRIPTION: *desc,
-                        PROP_DATATYPE: *dt,
+                        PROP_DATATYPE: DT_STRING,
                         PROP_PARENT: s,
                     }),
                 )?;
             }
 
-            // note class — reuses tags, created, status from tool schema
             self.create(
                 &self.class_url("note"),
                 &serde_json::json!({
@@ -378,79 +298,6 @@ impl AtomicClient {
                         self.prop_url("tags"),
                         self.prop_url("created"),
                         self.prop_url("status"),
-                    ],
-                    PROP_PARENT: s,
-                }),
-            )?;
-        }
-
-        // --- Context schema (sentinel: "ctx-slot-id" property) ---
-        if !self.exists(&self.prop_url("ctx-slot-id")) {
-            let ctx_props: &[(&str, &str, &str)] = &[
-                ("ctx-slot-id", "Context slot ID (e.g. s001)", DT_STRING),
-                ("ctx-session", "Session ID", DT_STRING),
-                (
-                    "ctx-kind",
-                    "Slot kind: task, result, error, knowledge, scratch",
-                    DT_STRING,
-                ),
-                ("ctx-state", "Slot state: hot, warm, cold", DT_STRING),
-                ("ctx-content", "Full slot content", DT_STRING),
-                (
-                    "ctx-summary",
-                    "Compacted summary (replaces content when set)",
-                    DT_STRING,
-                ),
-                ("ctx-tokens", "Estimated token count", DT_INTEGER),
-                ("ctx-born", "Turn number when slot was created", DT_INTEGER),
-                (
-                    "ctx-touched",
-                    "Turn number when slot was last referenced",
-                    DT_INTEGER,
-                ),
-                (
-                    "ctx-touch-count",
-                    "Number of times slot was explicitly touched",
-                    DT_INTEGER,
-                ),
-                (
-                    "ctx-wisdom",
-                    "Auto-extracted as wisdom (true/false)",
-                    DT_STRING,
-                ),
-            ];
-
-            for (name, desc, dt) in ctx_props {
-                self.create(
-                    &self.prop_url(name),
-                    &serde_json::json!({
-                        PROP_IS_A: [CLASS_PROPERTY],
-                        PROP_SHORTNAME: format!("esc-{name}"),
-                        PROP_DESCRIPTION: *desc,
-                        PROP_DATATYPE: *dt,
-                        PROP_PARENT: s,
-                    }),
-                )?;
-            }
-
-            self.create(
-                &self.class_url("context-slot"),
-                &serde_json::json!({
-                    PROP_IS_A: [CLASS_CLASS],
-                    PROP_SHORTNAME: "esc-context-slot",
-                    PROP_DESCRIPTION: "A context slot in an agent session — lifecycle-managed knowledge unit",
-                    PROP_REQUIRES: [self.prop_url("ctx-slot-id"), self.prop_url("ctx-session"), self.prop_url("ctx-kind")],
-                    PROP_RECOMMENDS: [
-                        self.prop_url("ctx-state"),
-                        self.prop_url("ctx-content"),
-                        self.prop_url("ctx-summary"),
-                        self.prop_url("ctx-tokens"),
-                        self.prop_url("ctx-born"),
-                        self.prop_url("ctx-touched"),
-                        self.prop_url("ctx-touch-count"),
-                        self.prop_url("ctx-wisdom"),
-                        self.prop_url("tags"),
-                        self.prop_url("created"),
                     ],
                     PROP_PARENT: s,
                 }),
@@ -520,7 +367,7 @@ fn curl_get(url: &str, headers: &[(String, String)]) -> Result<(u16, String), St
     let mut cmd = Command::new("curl");
     cmd.arg("-s")
         .arg("--connect-timeout")
-        .arg("1")
+        .arg("2")
         .arg("--max-time")
         .arg("5")
         .arg("-w")
@@ -539,7 +386,7 @@ fn curl_post(url: &str, body: &str, headers: &[(String, String)]) -> Result<(u16
     let mut cmd = Command::new("curl");
     cmd.arg("-s")
         .arg("--connect-timeout")
-        .arg("1")
+        .arg("2")
         .arg("--max-time")
         .arg("5")
         .arg("-w")

@@ -1,7 +1,0 @@
-app sum-demo
-cap io_write
-
-a const_num value=13
-b const_num value=29
-sum add lhs=@a rhs=@b
-out print_num value=@sum

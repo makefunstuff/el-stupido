@@ -1,1 +1,0 @@
-{"app":"temp_converter","capabilities":["io_read","io_write"],"nodes":[{"id":"f","use":"arg_num","params":{"index":1}},{"id":"c","use":"math","bind":{"lhs":"f","rhs":"32"}},{"id":"div","use":"mul","bind":{"lhs":"c","rhs":"5"}},{"id":"mult","use":"sub","bind":{"lhs":"div","rhs":"9"}},{"id":"out","use":"print_num","bind":{"value":"mult"}}]}
