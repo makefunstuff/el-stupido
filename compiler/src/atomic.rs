@@ -183,6 +183,46 @@ impl AtomicClient {
         }
     }
 
+    /// Destroy a resource on atomic-server via signed commit.
+    pub fn destroy(&self, subject: &str) -> Result<(), String> {
+        let resource = self.get(subject)?;
+        let prev = resource
+            .get(PROP_LAST_COMMIT)
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "no lastCommit on resource".to_string())?;
+
+        let ts = now_millis();
+        let mut fields = serde_json::Map::new();
+        fields.insert(PROP_CREATED_AT.into(), Value::Number(ts.into()));
+        fields.insert(PROP_IS_A.into(), serde_json::json!([CLASS_COMMIT]));
+        fields.insert(PROP_PREVIOUS_COMMIT.into(), Value::String(prev.into()));
+        fields.insert(PROP_SIGNER.into(), Value::String(self.agent_url.clone()));
+        fields.insert(PROP_SUBJECT.into(), Value::String(subject.into()));
+        fields.insert(
+            "https://atomicdata.dev/properties/destroy".into(),
+            Value::Bool(true),
+        );
+
+        let sign_str = deterministic_json(&Value::Object(fields.clone()));
+        let signature = self.sign(&sign_str);
+
+        fields.insert(PROP_SIGNATURE.into(), Value::String(signature.clone()));
+        fields.insert(
+            "@id".into(),
+            Value::String(format!("{}/commits/{}", self.server_url, signature)),
+        );
+
+        let body =
+            serde_json::to_string(&Value::Object(fields)).map_err(|e| format!("json: {e}"))?;
+
+        let (code, resp) = curl_post(&format!("{}/commit", self.server_url), &body, &[])?;
+        if code >= 200 && code < 300 {
+            Ok(())
+        } else {
+            Err(format!("destroy HTTP {code}: {resp}"))
+        }
+    }
+
     // --- URL helpers ---
 
     pub fn prop_url(&self, name: &str) -> String {

@@ -388,6 +388,64 @@ pub fn sync_to_atomic() -> Result<usize, String> {
     Ok(count)
 }
 
+/// Delete notes from atomic-server that don't exist in local memory.
+/// Uses search to discover remote notes, then destroys any not in local.
+/// Returns (deleted_count, error_count).
+pub fn purge_atomic() -> Result<(usize, usize), String> {
+    let client = crate::atomic::AtomicClient::from_env()
+        .ok_or_else(|| "set ESC_ATOMIC_URL and ESC_ATOMIC_KEY".to_string())?;
+    let state = load();
+
+    // Search atomic-server for all esc-note resources
+    // Use "esc-note" as query since all notes have that in their name field
+    let remote_notes = client.search("esc-note", 200)?;
+
+    let prefix = format!("{}/esc/note/", client.server_url);
+    let mut deleted = 0;
+    let mut errors = 0;
+
+    for r in &remote_notes {
+        let subject = match r.get("@id").and_then(|v| v.as_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+
+        // Extract the hash prefix from the URL
+        let remote_hash = match subject.strip_prefix(&prefix) {
+            Some(h) => h,
+            None => continue,
+        };
+
+        // Check if any local note hash starts with this prefix
+        let exists_locally = state.notes.keys().any(|h| h.starts_with(remote_hash));
+
+        if !exists_locally {
+            // Get summary for logging
+            let summary = r
+                .get(&client.prop_url("note-summary"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("(no summary)");
+            let context = r
+                .get(&client.prop_url("note-context"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+
+            match client.destroy(&subject) {
+                Ok(()) => {
+                    eprintln!("  destroyed [{context}] {remote_hash}: {summary}");
+                    deleted += 1;
+                }
+                Err(e) => {
+                    eprintln!("  error {remote_hash}: {e}");
+                    errors += 1;
+                }
+            }
+        }
+    }
+
+    Ok((deleted, errors))
+}
+
 // --- Atomic-server backend ---
 
 /// Recall via atomic-server: full-text search for notes.

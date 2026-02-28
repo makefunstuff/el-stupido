@@ -79,6 +79,8 @@ enum MemoryAction {
     },
     /// Sync all notes to atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
     Sync,
+    /// Delete notes from atomic-server that don't exist locally
+    Purge,
     /// Create esc schema on atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
     Setup,
 }
@@ -203,6 +205,20 @@ fn main() {
                         "synced {count}/{} notes to atomic-server",
                         state.notes.len()
                     );
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            },
+
+            MemoryAction::Purge => match memory::purge_atomic() {
+                Ok((deleted, errors)) => {
+                    if deleted == 0 && errors == 0 {
+                        eprintln!("atomic-server is clean — nothing to purge");
+                    } else {
+                        eprintln!("purged {deleted} stale notes ({errors} errors)");
+                    }
                 }
                 Err(e) => {
                     eprintln!("error: {e}");
