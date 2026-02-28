@@ -19,7 +19,7 @@ esc context recall "project"  # pull relevant knowledge from memory graph
 
 ### During work — feed your observations
 
-After significant tool calls (builds, file reads, discoveries, errors), feed the output so your observer session can manage it:
+After significant tool calls (builds, file reads, discoveries, errors), feed the output so the observer can manage it:
 
 ```bash
 esc context feed --source "cargo build" "error[E0433]: failed to resolve serde"
@@ -27,7 +27,22 @@ esc context feed --source "architecture" "context.rs implements slot lifecycle w
 esc context feed --source "decision" "chose atomic-server for typed graph with tantivy search"
 ```
 
-Feed is silent (zero output) and auto-creates a session if none exists. Do this naturally as you work — it costs nothing. A background observer session manages the lifecycle.
+Feed is silent (zero output) and auto-creates a session if none exists. Do this naturally as you work — it costs nothing.
+
+### Observer — context lifecycle management
+
+The observer runs as a subtask agent (not a background process). It triggers on session idle via the context plugin, or can be invoked manually:
+
+```bash
+opencode run --agent observer "Run all 3 jobs"
+```
+
+The observer manages:
+1. **Context slots** — archive cold, drop stale, compact verbose, touch relevant
+2. **Conversation history** — reads `~/.esc/context/history.jsonl`, writes semantic compactions
+3. **Memory graph** — deduplicates and supersedes redundant entries
+
+Config lives globally at `~/.config/opencode/agents/observer.md`.
 
 ### When you need knowledge
 

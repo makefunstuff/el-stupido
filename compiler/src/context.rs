@@ -31,9 +31,12 @@ const ARCHIVE_THRESHOLD: f32 = 0.80;
 /// Recommend compacting warm slots above this token count.
 const COMPACT_THRESHOLD: u32 = 200;
 /// Slots touched this many times are candidates for auto-wisdom extraction.
-const WISDOM_TOUCH_THRESHOLD: u32 = 3;
+const WISDOM_TOUCH_THRESHOLD: u32 = 1;
 /// Knowledge slots surviving this many turns get auto-extracted as wisdom.
 const WISDOM_AGE_THRESHOLD: u32 = 15;
+/// Slots surviving this many turns get wisdom'd even with zero engagement.
+/// Rationale: if nothing dropped it for this long, it has passive value.
+const WISDOM_AGE_ONLY_THRESHOLD: u32 = 30;
 
 // --- Types ---
 
@@ -169,12 +172,20 @@ impl Slot {
     }
 
     /// Is this slot a wisdom candidate?
-    /// High engagement (touched or updated repeatedly) + long survival = wisdom.
+    /// Two paths to wisdom:
+    /// 1. Engagement path: touched/updated at least once + survived WISDOM_AGE_THRESHOLD turns.
+    /// 2. Age-only path: survived WISDOM_AGE_ONLY_THRESHOLD turns regardless of engagement.
+    ///    If nothing dropped it for this long, it has passive value.
     fn is_wisdom_candidate(&self, turn: u32) -> bool {
-        !self.wisdom_persisted
-            && self.kind.can_be_wisdom()
-            && self.engagement() >= WISDOM_TOUCH_THRESHOLD
-            && self.age(turn) >= WISDOM_AGE_THRESHOLD
+        if self.wisdom_persisted || !self.kind.can_be_wisdom() {
+            return false;
+        }
+        let age = self.age(turn);
+        // Path 1: any engagement + moderate age
+        let engaged = self.engagement() >= WISDOM_TOUCH_THRESHOLD && age >= WISDOM_AGE_THRESHOLD;
+        // Path 2: long survival alone (passive value)
+        let survived = age >= WISDOM_AGE_ONLY_THRESHOLD;
+        engaged || survived
     }
 }
 
@@ -219,6 +230,13 @@ pub struct WisdomExtracted {
 }
 
 #[derive(Debug, Serialize)]
+pub struct AutoArchived {
+    pub slot: String,
+    pub kind: String,
+    pub action: String, // "archived", "wisdom-archived", "dropped"
+}
+
+#[derive(Debug, Serialize)]
 pub struct ObserveResult {
     pub turn: u32,
     pub total_tokens: u32,
@@ -228,6 +246,7 @@ pub struct ObserveResult {
     pub transitions: Vec<Transition>,
     pub recommendations: Vec<Recommendation>,
     pub wisdom: Vec<WisdomExtracted>,
+    pub auto_archived: Vec<AutoArchived>,
 }
 
 // --- File management ---
@@ -457,6 +476,76 @@ fn extract_wisdom(session: &mut Session) -> Vec<WisdomExtracted> {
     extracted
 }
 
+/// Auto-archive cold slots: persist to memory (or drop scratch), remove from session.
+/// Without an observer session, cold slots would die silently. This is the safety net.
+/// Wisdom-persisted slots are just removed (already saved). Others get archived.
+fn auto_archive_cold(session: &mut Session) -> Vec<AutoArchived> {
+    let mut results = Vec::new();
+
+    // Collect indices of Cold slots (reverse order so removal doesn't shift indices)
+    let cold_indices: Vec<usize> = session
+        .slots
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.state == SlotState::Cold)
+        .map(|(i, _)| i)
+        .rev()
+        .collect();
+
+    for idx in cold_indices {
+        let slot = &session.slots[idx];
+        let slot_id = slot.id.clone();
+        let kind_label = slot.kind.label().to_string();
+
+        if slot.wisdom_persisted {
+            // Already saved to memory graph via wisdom extraction — just remove
+            results.push(AutoArchived {
+                slot: slot_id,
+                kind: kind_label,
+                action: "wisdom-archived".to_string(),
+            });
+            session.slots.remove(idx);
+            session.archived_count += 1;
+        } else if let Some(note_kind) = slot.kind.note_kind() {
+            // Archivable — persist to memory graph
+            let content = slot.effective_content().to_string();
+            let summary = format!(
+                "[ctx:{}] {}",
+                kind_label,
+                if content.len() > 120 {
+                    &content[..120]
+                } else {
+                    &content
+                }
+            );
+            crate::memory::record_note(
+                note_kind,
+                &summary,
+                &content,
+                "context-archive",
+                &["auto-archived".to_string()],
+            );
+            results.push(AutoArchived {
+                slot: slot_id,
+                kind: kind_label,
+                action: "archived".to_string(),
+            });
+            session.slots.remove(idx);
+            session.archived_count += 1;
+        } else {
+            // Scratch — just drop
+            results.push(AutoArchived {
+                slot: slot_id,
+                kind: kind_label,
+                action: "dropped".to_string(),
+            });
+            session.slots.remove(idx);
+        }
+    }
+
+    results
+}
+
 /// Generate recommendations based on current state.
 fn recommend(session: &Session) -> Vec<Recommendation> {
     let total: u32 = session.slots.iter().map(|s| s.tokens).sum();
@@ -609,6 +698,7 @@ pub fn observe() -> Result<ObserveResult, String> {
     let mut session = load().ok_or("no active session")?;
     let transitions = tick(&mut session);
     let wisdom = extract_wisdom(&mut session);
+    let auto_archived = auto_archive_cold(&mut session);
     let recommendations = recommend(&session);
     let total_tokens: u32 = session.slots.iter().map(|s| s.tokens).sum();
     let budget_pct = if session.budget > 0 {
@@ -630,6 +720,7 @@ pub fn observe() -> Result<ObserveResult, String> {
         transitions,
         recommendations,
         wisdom,
+        auto_archived,
     })
 }
 
@@ -730,6 +821,7 @@ pub fn assemble() -> Result<String, String> {
     // Continuous observation: advance turn and apply policies
     let transitions = tick(&mut session);
     let wisdom = extract_wisdom(&mut session);
+    let auto_archived = auto_archive_cold(&mut session);
     let recommendations = recommend(&session);
     let total_tokens: u32 = session.slots.iter().map(|s| s.tokens).sum();
     let budget_pct = if session.budget > 0 {
@@ -849,6 +941,15 @@ pub fn assemble() -> Result<String, String> {
                 "- {} ({}) {} -> {} ({} turns idle)\n",
                 t.slot, t.kind, t.from, t.to, t.age
             ));
+        }
+        out.push('\n');
+    }
+
+    // Auto-archived cold slots
+    if !auto_archived.is_empty() {
+        out.push_str("## Auto-archived (cold → memory)\n");
+        for a in &auto_archived {
+            out.push_str(&format!("- {} ({}) — {}\n", a.slot, a.kind, a.action));
         }
         out.push('\n');
     }
@@ -974,10 +1075,16 @@ fn auto_classify(text: &str) -> SlotKind {
 
 /// Find an existing slot with high content overlap. Returns slot index if found.
 /// Uses word-level intersection — deterministic, no embeddings needed.
+///
+/// Dedup rules (tuned to avoid false matches):
+/// - Words > 2 chars (catches "api", "cli", "fix", "bug", "add", etc.)
+/// - Minimum 3 absolute word overlaps (prevents short texts clobbering long ones)
+/// - >40% overlap ratio using min(new, existing) as denominator
 fn find_related_slot(session: &Session, text: &str, kind: SlotKind) -> Option<usize> {
-    let new_words: HashSet<&str> = text.split_whitespace().filter(|w| w.len() > 3).collect();
+    let new_words: HashSet<&str> = text.split_whitespace().filter(|w| w.len() > 2).collect();
 
-    if new_words.is_empty() {
+    if new_words.len() < 3 {
+        // Too few meaningful words — can't reliably match
         return None;
     }
 
@@ -993,14 +1100,20 @@ fn find_related_slot(session: &Session, text: &str, kind: SlotKind) -> Option<us
         let slot_words: HashSet<&str> = slot
             .content
             .split_whitespace()
-            .filter(|w| w.len() > 3)
+            .filter(|w| w.len() > 2)
             .collect();
 
-        if slot_words.is_empty() {
+        if slot_words.len() < 3 {
             continue;
         }
 
         let overlap = new_words.intersection(&slot_words).count();
+
+        // Must have at least 3 words in common (absolute floor)
+        if overlap < 3 {
+            continue;
+        }
+
         let min_size = new_words.len().min(slot_words.len()).max(1);
 
         // >40% word overlap = same topic, update instead of create
@@ -1169,7 +1282,8 @@ fn cursor_path() -> PathBuf {
 /// Append an event to the feed file. Called by the active session after tool calls.
 /// Silent on success — no stdout, no stderr. Minimal friction.
 /// Auto-creates session if none exists — zero manual setup.
-pub fn feed(source: &str, content: &str) -> Result<(), String> {
+/// Optional `kind` overrides auto-classification (discovery, decision, pattern, issue, etc.)
+pub fn feed(source: &str, content: &str, kind: Option<&str>) -> Result<(), String> {
     // Auto-init: first feed bootstraps the session
     if load().is_none() {
         init(100_000);
@@ -1182,11 +1296,14 @@ pub fn feed(source: &str, content: &str) -> Result<(), String> {
         .unwrap_or_default()
         .as_secs();
 
-    let entry = serde_json::json!({
+    let mut entry = serde_json::json!({
         "ts": ts,
         "source": source,
         "content": content,
     });
+    if let Some(k) = kind {
+        entry["kind"] = serde_json::Value::String(k.to_string());
+    }
 
     let mut line = serde_json::to_string(&entry).map_err(|e| format!("json: {e}"))?;
     line.push('\n');
@@ -1270,7 +1387,10 @@ pub fn watch() -> Result<WatchResult, String> {
             continue;
         }
 
-        match ingest(content, None, source) {
+        // Honor explicit kind from feed entry, overriding auto-classification
+        let kind_override = entry["kind"].as_str().and_then(|k| SlotKind::parse(k).ok());
+
+        match ingest(content, kind_override, source) {
             Ok(r) => results.push(r),
             Err(_) => continue,
         }

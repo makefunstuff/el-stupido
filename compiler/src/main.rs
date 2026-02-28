@@ -235,6 +235,9 @@ enum ContextAction {
         /// Source of the content (e.g. "cargo build", "file read")
         #[arg(long)]
         source: String,
+        /// Override auto-classification: task, result, error, knowledge, scratch
+        #[arg(long)]
+        kind: Option<String>,
         /// Content (reads from stdin if omitted)
         content: Option<String>,
     },
@@ -1077,7 +1080,7 @@ fn main() {
                     }
                 }
 
-                ContextAction::Feed { source, content } => {
+                ContextAction::Feed { source, kind, content } => {
                     let text = match content {
                         Some(c) => c,
                         None => {
@@ -1090,7 +1093,7 @@ fn main() {
                     if text.trim().is_empty() {
                         return;
                     }
-                    if let Err(e) = context::feed(&source, text.trim()) {
+                    if let Err(e) = context::feed(&source, text.trim(), kind.as_deref()) {
                         eprintln!("feed error: {e}");
                     }
                     // No output on success — zero friction for active session
