@@ -7,7 +7,7 @@ description = "el-stupido compiler — composable primitives for program generat
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive", "env"] }
 thiserror = "2.0.18"
 sha2 = "0.10"
 ed25519-dalek = "2"

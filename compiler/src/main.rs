@@ -1,4 +1,5 @@
 mod atomic;
+mod assist;
 mod compose;
 mod context;
 mod emit;
@@ -77,6 +78,23 @@ enum Cmd {
     Context {
         #[command(subcommand)]
         action: ContextAction,
+    },
+    /// Interactive assistant: describe what you want, get a compiled program
+    Assist {
+        /// Single prompt (non-interactive mode). Omit for REPL.
+        prompt: Option<String>,
+        /// LLM model name
+        #[arg(short, long, env = "ESC_MODEL", default_value = "qwen2.5-coder:3b")]
+        model: String,
+        /// OpenAI-compatible API base URL
+        #[arg(long, env = "ESC_API_BASE", default_value = "http://localhost:11434/v1")]
+        api_base: String,
+        /// API key (reads from ESC_API_KEY or OPENAI_API_KEY)
+        #[arg(long, env = "ESC_API_KEY")]
+        api_key: Option<String>,
+        /// Verbose output (show LLM response, manifest, etc.)
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -1122,6 +1140,22 @@ fn main() {
                 ContextAction::Recall { query, limit } => {
                     let result = context::recall(&query, limit);
                     println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                }
+            }
+        }
+
+        Cmd::Assist { prompt, model, api_base, api_key, verbose } => {
+            // Resolve API key: --api-key > ESC_API_KEY > OPENAI_API_KEY > ""
+            let key = api_key
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+                .unwrap_or_default();
+
+            match prompt {
+                Some(p) => {
+                    assist::run_once(&registry, &model, &api_base, &key, &p, verbose);
+                }
+                None => {
+                    assist::run_repl(&registry, &model, &api_base, &key, verbose);
                 }
             }
         }

@@ -826,6 +826,19 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
         ("see", "vision"),
         ("look", "vision"),
         ("capture", "screenshot"),
+        ("datetime", "__shell_date__"),
+        ("date", "__shell_date__"),
+        ("time", "__shell_date__"),
+        ("current_datetime", "__shell_date__"),
+        ("current_date", "__shell_date__"),
+        ("current_time", "__shell_date__"),
+        ("now", "__shell_date__"),
+        ("timestamp", "__shell_date__"),
+        ("uptime", "__shell_uptime__"),
+        ("hostname", "__shell_hostname__"),
+        ("whoami", "__shell_whoami__"),
+        ("pwd", "__shell_pwd__"),
+        ("uname", "__shell_uname__"),
     ].into_iter().collect();
 
     // "print" is ambiguous — decide based on what it binds to.
@@ -845,7 +858,23 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
         // ── Fix primitive names ──
         let prim_lower = node.primitive.to_lowercase();
         if let Some(&correct) = prim_aliases.get(prim_lower.as_str()) {
-            node.primitive = correct.to_string();
+            // Handle __shell_*__ synthetic aliases: convert to shell + set params.cmd
+            if correct.starts_with("__shell_") {
+                let cmd = match correct {
+                    "__shell_date__" => "date",
+                    "__shell_uptime__" => "uptime",
+                    "__shell_hostname__" => "hostname",
+                    "__shell_whoami__" => "whoami",
+                    "__shell_pwd__" => "pwd",
+                    "__shell_uname__" => "uname -a",
+                    _ => "echo unknown",
+                };
+                node.primitive = "shell".to_string();
+                node.params.insert("cmd".to_string(), crate::primitive::ParamValue::Str(cmd.to_string()));
+                node.bind.clear(); // shell takes no binds
+            } else {
+                node.primitive = correct.to_string();
+            }
         }
 
         // Handle ambiguous "print"
@@ -1006,6 +1035,18 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
                         node.bind.insert(new_name, val);
                     }
                 }
+            }
+        }
+
+        // ── Strip binds unknown to the primitive ──
+        // If a primitive has no bind slots, remove all binds (source nodes like shell, const_*).
+        // If it has bind slots, remove only the ones that don't match any expected slot.
+        if let Some(prim) = registry.get(&node.primitive) {
+            let expected_binds: HashSet<&str> = prim.binds.iter().map(|b| b.name).collect();
+            if expected_binds.is_empty() {
+                node.bind.clear();
+            } else {
+                node.bind.retain(|k, _| expected_binds.contains(k.as_str()));
             }
         }
     }
