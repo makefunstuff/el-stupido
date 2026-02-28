@@ -1,5 +1,6 @@
 mod atomic;
 mod compose;
+mod context;
 mod emit;
 mod grammar;
 mod memory;
@@ -8,7 +9,7 @@ mod cache;
 
 use clap::{Parser, Subcommand};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
 
@@ -71,6 +72,11 @@ enum Cmd {
     Memory {
         #[command(subcommand)]
         action: MemoryAction,
+    },
+    /// Manage session context lifecycle (continuous observation + graph augmentation)
+    Context {
+        #[command(subcommand)]
+        action: ContextAction,
     },
 }
 
@@ -157,6 +163,91 @@ enum MemoryAction {
     },
     /// Create esc schema on atomic-server (requires ESC_ATOMIC_URL + ESC_ATOMIC_KEY)
     Setup,
+}
+
+#[derive(Subcommand)]
+enum ContextAction {
+    /// Initialize a new context session
+    Init {
+        /// Token budget for the session
+        #[arg(long, default_value = "100000")]
+        budget: u32,
+    },
+    /// Add a context slot
+    Add {
+        /// Slot kind: task, result, error, knowledge, scratch
+        #[arg(long)]
+        kind: String,
+        /// Content (reads from stdin if omitted)
+        content: Option<String>,
+    },
+    /// Mark a slot as still relevant (promotes back to hot)
+    Touch {
+        /// Slot ID (e.g. s001)
+        id: String,
+    },
+    /// Advance turn and apply policies (JSON output)
+    Observe,
+    /// Replace slot content with a compact summary
+    Compact {
+        /// Slot ID
+        id: String,
+        /// Summary text
+        summary: String,
+    },
+    /// Persist slot to memory graph, remove from session
+    Archive {
+        /// Slot ID
+        id: String,
+    },
+    /// Remove slot without persisting
+    Drop {
+        /// Slot ID
+        id: String,
+    },
+    /// Output curated context with reasoning (auto-observes each call)
+    Assemble,
+    /// Show session status
+    Status,
+    /// Update an existing slot's content in place
+    Update {
+        /// Slot ID
+        id: String,
+        /// New content (reads from stdin if omitted)
+        content: Option<String>,
+        /// Where this content came from
+        #[arg(long)]
+        source: Option<String>,
+    },
+    /// Ingest raw text: auto-classify, match existing slots, create or update
+    Ingest {
+        /// Content (reads from stdin if omitted)
+        content: Option<String>,
+        /// Override auto-classification: task, result, error, knowledge, scratch
+        #[arg(long)]
+        kind: Option<String>,
+        /// Where this content came from (e.g. "cargo build")
+        #[arg(long)]
+        source: Option<String>,
+    },
+    /// Write an event to the feed (active session pipes tool output here)
+    Feed {
+        /// Source of the content (e.g. "cargo build", "file read")
+        #[arg(long)]
+        source: String,
+        /// Content (reads from stdin if omitted)
+        content: Option<String>,
+    },
+    /// Process new feed entries and run observe cycle (observer session calls this)
+    Watch,
+    /// Search memory graph for knowledge augmentation (model decides when)
+    Recall {
+        /// Search query
+        query: String,
+        /// Max results
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -802,6 +893,233 @@ fn main() {
                 }
 
 
+            }
+        }
+
+        Cmd::Context { action } => {
+            match action {
+                ContextAction::Init { budget } => {
+                    let session = context::init(budget);
+                    eprintln!("context session {} (budget: {} tokens)", session.id, session.budget);
+                }
+
+                ContextAction::Add { kind, content } => {
+                    let kind = match context::SlotKind::parse(&kind) {
+                        Ok(k) => k,
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    };
+                    let text = match content {
+                        Some(c) => c,
+                        None => {
+                            let mut buf = String::new();
+                            std::io::stdin().read_to_string(&mut buf).unwrap_or_default();
+                            buf
+                        }
+                    };
+                    if text.trim().is_empty() {
+                        eprintln!("error: empty content");
+                        std::process::exit(1);
+                    }
+                    match context::add(kind, text.trim()) {
+                        Ok((id, tokens)) => {
+                            println!("{}", serde_json::json!({"id": id, "tokens": tokens}));
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Touch { id } => {
+                    match context::touch(&id) {
+                        Ok(()) => eprintln!("touched: {id}"),
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Observe => {
+                    match context::observe() {
+                        Ok(result) => {
+                            eprintln!(
+                                "[context] turn {} | {}K/{}K ({:.0}%) | {} slots | {} transitions, {} recs",
+                                result.turn,
+                                result.total_tokens / 1000,
+                                result.budget / 1000,
+                                result.budget_pct * 100.0,
+                                result.slot_count,
+                                result.transitions.len(),
+                                result.recommendations.len(),
+                            );
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Compact { id, summary } => {
+                    match context::compact(&id, &summary) {
+                        Ok((old, new)) => {
+                            eprintln!("compacted {id}: {old} -> {new} tokens (saved {})", old.saturating_sub(new));
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Archive { id } => {
+                    match context::archive(&id) {
+                        Ok((hash, kind)) => {
+                            eprintln!("archived {id} -> memory note [{kind}] {hash}");
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Drop { id } => {
+                    match context::drop_slot(&id) {
+                        Ok(()) => eprintln!("dropped: {id}"),
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Assemble => {
+                    match context::assemble() {
+                        Ok(text) => print!("{text}"),
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Status => {
+                    match context::status() {
+                        Ok(s) => println!("{}", serde_json::to_string_pretty(&s).unwrap()),
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Update { id, content, source } => {
+                    let text = match content {
+                        Some(c) => c,
+                        None => {
+                            let mut buf = String::new();
+                            std::io::stdin().read_to_string(&mut buf).unwrap_or_default();
+                            buf
+                        }
+                    };
+                    if text.trim().is_empty() {
+                        eprintln!("error: empty content");
+                        std::process::exit(1);
+                    }
+                    match context::update(&id, text.trim(), source.as_deref()) {
+                        Ok((old, new)) => {
+                            eprintln!("updated {id}: {old} -> {new} tokens");
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Ingest { content, kind, source } => {
+                    let text = match content {
+                        Some(c) => c,
+                        None => {
+                            let mut buf = String::new();
+                            std::io::stdin().read_to_string(&mut buf).unwrap_or_default();
+                            buf
+                        }
+                    };
+                    if text.trim().is_empty() {
+                        eprintln!("error: empty content");
+                        std::process::exit(1);
+                    }
+                    let kind_override = kind.map(|k| {
+                        match context::SlotKind::parse(&k) {
+                            Ok(k) => k,
+                            Err(e) => {
+                                eprintln!("error: {e}");
+                                std::process::exit(1);
+                            }
+                        }
+                    });
+                    match context::ingest(text.trim(), kind_override, source.as_deref()) {
+                        Ok(result) => {
+                            println!("{}", serde_json::to_string(&result).unwrap());
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Feed { source, content } => {
+                    let text = match content {
+                        Some(c) => c,
+                        None => {
+                            let mut buf = String::new();
+                            std::io::stdin().read_to_string(&mut buf).unwrap_or_default();
+                            buf
+                        }
+                    };
+                    // Silent on empty — don't pollute active session
+                    if text.trim().is_empty() {
+                        return;
+                    }
+                    if let Err(e) = context::feed(&source, text.trim()) {
+                        eprintln!("feed error: {e}");
+                    }
+                    // No output on success — zero friction for active session
+                }
+
+                ContextAction::Watch => {
+                    match context::watch() {
+                        Ok(result) => {
+                            if result.processed > 0 {
+                                eprintln!(
+                                    "[watch] {} entries processed",
+                                    result.processed,
+                                );
+                            } else {
+                                eprintln!("[watch] no new entries");
+                            }
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        }
+                        Err(e) => {
+                            eprintln!("error: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+
+                ContextAction::Recall { query, limit } => {
+                    let result = context::recall(&query, limit);
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                }
             }
         }
     }

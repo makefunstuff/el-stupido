@@ -456,3 +456,201 @@ This is testable. The next step is building the composable primitive system
 and measuring whether composition achieves equivalent expansion ratios to
 hand-coded domain templates while scaling to new domains with zero compiler
 changes.
+
+---
+
+## Round 7: Implementation — The Compose Pipeline Exists
+
+**Date**: 2026-02-28
+**Status**: The composable primitive system from Finding 13 is built and working
+
+### Finding 15: 40 Primitives, Zero Domain Templates
+
+The compose pipeline predicted in Finding 13 now exists. 40 typed primitives
+compose into programs via JSON manifests, `.esc` named syntax, or compact tape
+format. No domain-specific templates remain — everything is composition.
+
+| Category | Count | Examples |
+|---|---|---|
+| Constants | 2 | `const_num`, `const_str` |
+| Arithmetic | 8 | `add`, `sub`, `mul`, `div`, `mod_num`, `floor`, `abs`, `parse_num` |
+| Comparison/Logic | 6 | `gt`, `lt`, `eq_num`, `and_bool`, `or_bool`, `not_bool` |
+| Branching | 2 | `select_num`, `select_str` |
+| String ops | 12 | `concat`, `format_str`, `substr`, `replace_str`, `split_nth`, etc. |
+| I/O | 4 | `read_stdin`, `read_stdin_all`, `print_num`, `print_str` |
+| Filesystem | 6 | `read_file`, `write_file`, `read_file_dyn`, `write_file_dyn`, etc. |
+| CLI/Env | 4 | `arg_num`, `arg_str`, `arg_count`, `env_str` |
+| Network | 2 | `http_get`, `http_get_dyn` |
+| Control | 1 | `exit_code` |
+
+Every primitive declares typed inputs (`params`, `binds`), typed outputs
+(`provides`: `num`, `str`, `bool`, `sink`), and effects (`pure`, `io_read`,
+`io_write`, `fs_read`, `fs_write`, `net_read`, `env_read`). The compiler
+enforces capability matching at bind time — a node expecting `num` rejects
+a node providing `str`. Forward references are rejected (acyclic by
+construction).
+
+This validates the prediction from Finding 13: 40 primitives composing in
+groups of 4-8 yield thousands of possible programs. 20 working examples
+exist, from arithmetic to HTTP clients to file processors, all from the same
+primitive set with zero compiler changes between them.
+
+### Finding 16: Three Formats, One Validation Path
+
+Three input formats converge on the same `Manifest` struct and share a
+single validation path:
+
+**JSON** (verbose, LLM-friendly for constrained decoding):
+```json
+{"app":"sum","nodes":[{"id":"a","op":"const_num","params":{"value":13}},
+{"id":"b","op":"const_num","params":{"value":29}},
+{"id":"s","op":"add","binds":{"lhs":"a","rhs":"b"}},
+{"id":"out","op":"print_num","binds":{"value":"s"}}]}
+```
+
+**Tape** (compact, model-facing canonical form):
+```
+A sum
+C io_write
+0 cn 13
+1 cn 29
+2 ad 0 1
+3 pn 2
+```
+
+**.esc** (named key=value, human-readable):
+```
+app = sum
+a = const_num value=13
+b = const_num value=29
+s = add lhs=a rhs=b
+out = print_num value=s
+```
+
+The tape format is the canonical representation used for content-addressed
+hashing. `canonical_tape()` strips the app name, sorts capabilities, and
+produces a deterministic string. Two manifests with different app names but
+identical computation hash to the same binary.
+
+The compiler auto-detects format: starts with `{` = JSON; first non-blank
+line starts with `A`, `C`, or a digit = tape; otherwise `.esc`. No flags
+needed.
+
+### Finding 17: Generated Rust, Not C
+
+The compose pipeline generates Rust (not C as the earlier codebook system
+did). Each manifest compiles to a single self-contained `.rs` file with no
+external dependencies. HTTP uses raw TCP sockets. HTTPS shells out to curl.
+The compiler invokes `rustc --edition 2021 -C opt-level=2 -C strip=symbols`.
+
+Machine output for `compose_sum.json`:
+
+```
+status: ok
+rust_size: 380 bytes (generated source)
+binary_size: 367,840 bytes (stripped native binary)
+hash: 703b82ede0d9...
+cached: false
+```
+
+380 bytes of generated Rust from ~213 bytes of JSON manifest — a modest 1.8x
+expansion. But the binary is a complete standalone executable. The expansion
+ratio is lower than the codebook system (Finding 3: 5-66x) because compose
+manifests specify individual operations rather than high-level domain intents.
+The tradeoff: compose scales to arbitrary programs; codebooks were locked to
+4 domains.
+
+### Finding 18: Content-Addressed Caching Eliminates Redundant Compilation
+
+Compiled binaries are cached at `~/.esc/bin/<hash>` using the canonical tape
+hash. On second compose of the same computation, the compiler returns the
+cached binary instantly (`cached: true` in machine output). This means:
+
+- Identical manifests from different sessions reuse the same binary
+- Renaming the app doesn't trigger recompilation (app name is stripped from hash)
+- The cache grows monotonically — a library of verified tools accumulates
+
+This is the "immune system" model from Finding 13 realized: tools are forged
+once and reused forever.
+
+### Finding 19: Machine-Readable Errors Enable LLM Self-Correction
+
+Every validation error produces structured JSON with `kind`, `message`,
+field-specific details, and a `hint` written for LLM self-correction:
+
+```json
+{
+  "kind": "unknown_primitive",
+  "message": "primitive 'http_post' does not exist",
+  "hint": "run `esc primitives` to see available primitives"
+}
+```
+
+This closes the loop for autonomous generation: an LLM generates a manifest,
+the compiler validates it, errors come back as structured JSON the LLM can
+parse and fix. No human in the loop. The hint field gives the LLM its next
+action.
+
+### Finding 20: The Memory Graph Creates Persistent Knowledge
+
+The `esc memory` and `esc context` systems implement a persistent knowledge
+graph that survives across sessions, models, and providers:
+
+**Memory graph** (`~/.esc/memory.json`):
+- **Tools**: content-addressed by canonical tape hash. Each carries app name,
+  goal, tags, primitive chain pattern, IO signature, capability list, use
+  count. Tools are the atoms of reuse.
+- **Edges**: typed relationships between tools (`variant_of`, `pipes_to`,
+  `supersedes`). Enable graph-aware recall.
+- **Notes**: contextual knowledge (discoveries, decisions, patterns, issues).
+  Content-addressed by `kind:summary` hash.
+
+**Context slots** (per-session, `~/.esc/context/session.json`):
+- 5 slot kinds with different TTLs: Task (20/50), Knowledge (10/30),
+  Result (5/15), Error (3/8), Scratch (2/5)
+- State machine: Hot → Warm → Cold → Archived/Dropped
+- Auto-wisdom: slots with 3+ touches surviving 15+ turns are automatically
+  persisted to the memory graph as permanent knowledge
+- Token budget tracking with 80% archive threshold
+
+**Three-phase recall**:
+1. Direct word-level scoring (weighted by field: goal 3x, app 2x, tags 3x)
+2. Edge walk from direct hits to connected tools
+3. Tag expansion — tools sharing 2+ tags with hits (capped at 3)
+
+**Dual-write**: everything writes to both flat-file (offline-first, zero
+dependencies) and atomic-server (typed graph with tantivy full-text search,
+Ed25519-signed commits) when configured. The system works fully offline.
+
+### Finding 21: The GBNF Grammar Is Auto-Generated
+
+`esc grammar` auto-generates GBNF grammar rules from the primitive registry.
+Each primitive becomes an alternative in the node production, with typed
+params and binds. This means:
+
+- Adding a new primitive automatically updates the constrained decoding grammar
+- No hand-maintained grammar files (the scaling problem from Finding 12)
+- The grammar is always consistent with the compiler's validation
+
+Combined with Finding 4 (constrained decoding is transformative for sub-4B
+models), this means the compose pipeline is ready for end-to-end LLM-driven
+tool forging: model generates JSON within the auto-generated grammar →
+compiler validates → errors feed back → model corrects → binary is cached.
+
+### The State of the Thesis (v3 Revisited)
+
+Finding 13 predicted composable primitives as the path forward. Findings
+15-21 confirm the system works as designed:
+
+| v3 Prediction | Status |
+|---|---|
+| "Compositions of reusable primitives" | ✅ 40 primitives, 20 working examples |
+| "30-80 tokens of constrained JSON" | ✅ Tape format: ~20-40 tokens typical |
+| "Compiler generates the glue" | ✅ Rust codegen, single-file, no deps |
+| "Primitive library grows over time" | ✅ Content-addressed cache, memory graph |
+| "Without changing the compiler" | ✅ New primitives = registry entry only |
+| "Sub-1B models viable" | ⬜ Not yet benchmarked with compose pipeline |
+
+The missing piece is Round 8: benchmarking sub-1B models generating compose
+manifests (tape or JSON) with the auto-generated GBNF grammar. The
+infrastructure exists. The experiment needs to be run.

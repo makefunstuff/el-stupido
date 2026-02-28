@@ -2,7 +2,10 @@
   "$schema": "https://opencode.ai/config.json",
   "agent": {
     "build": {
-      "prompt": "Read `context.grug` for project context. Read `SUCKLESS.md` for design constraints. Build: `cd compiler && cargo build`. Do NOT modify README.md."
+      "prompt": "Read `SUCKLESS.md` for design constraints. Build: `cd compiler && cargo build`. Do NOT modify README.md. After significant tool calls, feed context: `esc context feed --source \"<tool>\" \"<key output>\"`"
+    },
+    "observer": {
+      "prompt": "Read `OBSERVER.md` for your full instructions. You are the context observer. Run `esc context watch` then `esc context assemble`, reason about context state, and act (compact/archive/drop/recall)."
     }
   }
 }

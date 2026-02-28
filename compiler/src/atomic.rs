@@ -241,6 +241,14 @@ impl AtomicClient {
         format!("{}/esc/note/{short}", self.server_url)
     }
 
+    pub fn ctx_slot_url(&self, session_id: &str, slot_id: &str) -> String {
+        format!("{}/esc/ctx/{session_id}/{slot_id}", self.server_url)
+    }
+
+    pub fn ctx_session_url(&self, session_id: &str) -> String {
+        format!("{}/esc/ctx/{session_id}", self.server_url)
+    }
+
     // --- Schema bootstrap ---
 
     /// Create esc properties + classes on atomic-server. Idempotent.
@@ -370,6 +378,79 @@ impl AtomicClient {
                         self.prop_url("tags"),
                         self.prop_url("created"),
                         self.prop_url("status"),
+                    ],
+                    PROP_PARENT: s,
+                }),
+            )?;
+        }
+
+        // --- Context schema (sentinel: "ctx-slot-id" property) ---
+        if !self.exists(&self.prop_url("ctx-slot-id")) {
+            let ctx_props: &[(&str, &str, &str)] = &[
+                ("ctx-slot-id", "Context slot ID (e.g. s001)", DT_STRING),
+                ("ctx-session", "Session ID", DT_STRING),
+                (
+                    "ctx-kind",
+                    "Slot kind: task, result, error, knowledge, scratch",
+                    DT_STRING,
+                ),
+                ("ctx-state", "Slot state: hot, warm, cold", DT_STRING),
+                ("ctx-content", "Full slot content", DT_STRING),
+                (
+                    "ctx-summary",
+                    "Compacted summary (replaces content when set)",
+                    DT_STRING,
+                ),
+                ("ctx-tokens", "Estimated token count", DT_INTEGER),
+                ("ctx-born", "Turn number when slot was created", DT_INTEGER),
+                (
+                    "ctx-touched",
+                    "Turn number when slot was last referenced",
+                    DT_INTEGER,
+                ),
+                (
+                    "ctx-touch-count",
+                    "Number of times slot was explicitly touched",
+                    DT_INTEGER,
+                ),
+                (
+                    "ctx-wisdom",
+                    "Auto-extracted as wisdom (true/false)",
+                    DT_STRING,
+                ),
+            ];
+
+            for (name, desc, dt) in ctx_props {
+                self.create(
+                    &self.prop_url(name),
+                    &serde_json::json!({
+                        PROP_IS_A: [CLASS_PROPERTY],
+                        PROP_SHORTNAME: format!("esc-{name}"),
+                        PROP_DESCRIPTION: *desc,
+                        PROP_DATATYPE: *dt,
+                        PROP_PARENT: s,
+                    }),
+                )?;
+            }
+
+            self.create(
+                &self.class_url("context-slot"),
+                &serde_json::json!({
+                    PROP_IS_A: [CLASS_CLASS],
+                    PROP_SHORTNAME: "esc-context-slot",
+                    PROP_DESCRIPTION: "A context slot in an agent session — lifecycle-managed knowledge unit",
+                    PROP_REQUIRES: [self.prop_url("ctx-slot-id"), self.prop_url("ctx-session"), self.prop_url("ctx-kind")],
+                    PROP_RECOMMENDS: [
+                        self.prop_url("ctx-state"),
+                        self.prop_url("ctx-content"),
+                        self.prop_url("ctx-summary"),
+                        self.prop_url("ctx-tokens"),
+                        self.prop_url("ctx-born"),
+                        self.prop_url("ctx-touched"),
+                        self.prop_url("ctx-touch-count"),
+                        self.prop_url("ctx-wisdom"),
+                        self.prop_url("tags"),
+                        self.prop_url("created"),
                     ],
                     PROP_PARENT: s,
                 }),
