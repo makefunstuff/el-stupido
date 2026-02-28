@@ -1,0 +1,21 @@
+{
+  "app": "uppercase",
+  "capabilities": ["io_write", "fs_read"],
+  "nodes": [
+    {
+      "id": "arg_str_1",
+      "use": "arg_str",
+      "params": {"index": 1}
+    },
+    {
+      "id": "upper_str",
+      "use": "upper_str",
+      "bind": {"text": "arg_str_1"}
+    },
+    {
+      "id": "print_upper_str",
+      "use": "print_str",
+      "bind": {"value": "upper_str"}
+    }
+  ]
+}

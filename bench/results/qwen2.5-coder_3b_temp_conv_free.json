@@ -1,0 +1,55 @@
+{
+  "app": "fahrenheit_to_celsius",
+  "capabilities": ["io_read", "io_write"],
+  "nodes": [
+    {
+      "id": "arg1",
+      "use": "arg_num",
+      "params": {"index": 1}
+    },
+    {
+      "id": "convert_f_to_c",
+      "use": "mul",
+      "bind": {
+        "lhs": {
+          "id": "sub",
+          "bind": {
+            "lhs": {
+              "id": "arg1",
+              "use": "const_num",
+              "params": {"value": 32}
+            },
+            "rhs": {
+              "id": "convert_f_to_c_temp",
+              "use": "div",
+              "bind": {
+                "lhs": {
+                  "id": "arg1",
+                  "use": "const_num",
+                  "params": {"value": 9}
+                },
+                "rhs": {
+                  "id": "convert_f_to_c_divisor",
+                  "use": "const_num",
+                  "params": {"value": 5}
+                }
+              }
+            }
+          }
+        },
+        "rhs": {
+          "id": "convert_f_to_c_temp",
+          "use": "const_num",
+          "params": {"value": 5}
+        }
+      }
+    },
+    {
+      "id": "print_celsius",
+      "use": "print_num",
+      "bind": {
+        "value": "convert_f_to_c"
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "app": "greet",
+  "capabilities": ["io_read", "io_write"],
+  "nodes": [
+    {
+      "id": "arg",
+      "use": "arg_str",
+      "params": {"index": 1},
+      "bind": {}
+    },
+    {
+      "id": "prefix",
+      "use": "const_str",
+      "params": {"value": "Hello, "},
+      "bind": {}
+    },
+    {
+      "id": "concatenated",
+      "use": "concat",
+      "bind": {"left": "prefix", "right": "arg"},
+      "params": {}
+    },
+    {
+      "id": "output",
+      "use": "print_str",
+      "bind": {"value": "concatenated"},
+      "params": {}
+    }
+  ]
+}

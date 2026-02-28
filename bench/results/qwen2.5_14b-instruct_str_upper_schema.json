@@ -1,0 +1,21 @@
+{
+  "app": "uppercase_cli_arg",
+  "capabilities": ["io_read", "io_write"],
+  "nodes": [
+    {
+      "id": "arg",
+      "use": "arg_str",
+      "params": {"index": 1}
+    },
+    {
+      "id": "uppercased",
+      "use": "upper_str",
+      "bind": {"text": "arg"}
+    },
+    {
+      "id": "output",
+      "use": "print_str",
+      "bind": {"value": "uppercased"}
+    }
+  ]
+}

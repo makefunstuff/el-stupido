@@ -1,0 +1,1 @@
+{"app":"sum","capabilities":["io_write"],"nodes":[{"id":"a","use":"const_num","params":{"value":17}},{"id":"b","use":"const_num","params":{"value":25}},{"id":"s","use":"add","bind":{"lhs":"a","rhs":"b"}},{"id":"out","use":"print_num","bind":{"value":"s"}}]  }

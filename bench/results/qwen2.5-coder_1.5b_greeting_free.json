@@ -1,0 +1,26 @@
+{
+  "app": "concat_hello",
+  "capabilities": ["io_write", "io_read"],
+  "nodes": [
+    {
+      "id": "arg_str1",
+      "use": "arg_str",
+      "params": {"index": 1}
+    },
+    {
+      "id": "concat",
+      "use": "concat",
+      "bind": {
+        "left": "arg_str1",
+        "right": "Hello, "
+      }
+    },
+    {
+      "id": "print",
+      "use": "print_str",
+      "bind": {
+        "value": "concat"
+      }
+    }
+  ]
+}

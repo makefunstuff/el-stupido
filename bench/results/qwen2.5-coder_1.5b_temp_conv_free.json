@@ -1,0 +1,45 @@
+{
+  "app": "temp_converter",
+  "capabilities": ["io_read", "io_write"],
+  "nodes": [
+    {
+      "id": "fahrenheit_input",
+      "use": "arg_num",
+      "params": {"index": 1}
+    },
+    {
+      "id": "celsius_formula",
+      "use": "sub",
+      "bind": {
+        "lhs": "fahrenheit_input",
+        "rhs": "const_num",
+        "params": {"value": 32}
+      }
+    },
+    {
+      "id": "multiply_by_five",
+      "use": "mul",
+      "bind": {
+        "lhs": "celsius_formula",
+        "rhs": "const_num",
+        "params": {"value": 5}
+      }
+    },
+    {
+      "id": "divide_by_nine",
+      "use": "div",
+      "bind": {
+        "lhs": "multiply_by_five",
+        "rhs": "const_num",
+        "params": {"value": 9}
+      }
+    },
+    {
+      "id": "celsius_output",
+      "use": "print_num",
+      "bind": {
+        "value": "divide_by_nine"
+      }
+    }
+  ]
+}

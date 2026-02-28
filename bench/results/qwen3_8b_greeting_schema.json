@@ -1,0 +1,1 @@
+{"app":"hello","capabilities":["io_write"],"nodes":[{"id":"arg","use":"arg_str","params":{"index":1}},{"id":"hello","use":"concat","bind":{"left":"Hello, ","right":"arg"}},{"id":"out","use":"print_str","bind":{"value":"hello"}}]}

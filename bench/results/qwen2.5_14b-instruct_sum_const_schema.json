@@ -1,0 +1,28 @@
+{
+  "app": "sum",
+  "capabilities": ["io_write"],
+  "nodes": [
+    {
+      "id": "const_17",
+      "use": "const_num",
+      "params": {"value": 17},
+      "bind": {}
+    },
+    {
+      "id": "const_25",
+      "use": "const_num",
+      "params": {"value": 25},
+      "bind": {}
+    },
+    {
+      "id": "sum_result",
+      "use": "add",
+      "bind": {"lhs": "const_17", "rhs": "const_25"}
+    },
+    {
+      "id": "print_sum",
+      "use": "print_num",
+      "bind": {"value": "sum_result"}
+    }
+  ]
+}

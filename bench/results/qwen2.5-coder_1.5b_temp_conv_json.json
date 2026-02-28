@@ -1,0 +1,79 @@
+{
+  "app": "temp_converter",
+  "capabilities": ["io_read", "io_write"],
+  "nodes": [
+    {
+      "id": "fahrenheit_input",
+      "use": "arg_num",
+      "params": {"index": 1}
+    },
+    {
+      "id": "celsius_formula",
+      "use": "sub",
+      "bind": {
+        "lhs": {
+          "id": "fahrenheit_subtract",
+          "use": "const_num",
+          "params": {"value": 32}
+        },
+        "rhs": {
+          "id": "fahrenheit_divide",
+          "use": "mul",
+          "bind": {
+            "lhs": {
+              "id": "fahrenheit_multiply",
+              "use": "sub",
+              "bind": {
+                "lhs": {
+                  "id": "fahrenheit_add",
+                  "use": "const_num",
+                  "params": {"value": 13}
+                },
+                "rhs": {
+                  "id": "fahrenheit_minus",
+                  "use": "const_num",
+                  "params": {"value": 29}
+                }
+              }
+            },
+            "rhs": {
+              "id": "fahrenheit_divide_by_five",
+              "use": "div",
+              "bind": {
+                "lhs": {
+                  "id": "fahrenheit_multiply_by_five",
+                  "use": "mul",
+                  "bind": {
+                    "lhs": {
+                      "id": "fahrenheit_add",
+                      "use": "const_num",
+                      "params": {"value": 13}
+                    },
+                    "rhs": {
+                      "id": "fahrenheit_minus",
+                      "use": "const_num",
+                      "params": {"value": 29}
+                    }
+                  }
+                },
+                "rhs": {
+                  "id": "fahrenheit_divide_by_five_by_three",
+                  "use": "div",
+                  "bind": {
+                    "lhs": {
+                      "id": "fahrenheit_multiply_by_five_by_three",
+                      "use": "mul",
+                      "bind": {
+                        "lhs": {
+                          "id": "fahrenheit_add",
+                          "use": "const_num",
+                          "params": {"value": 13}
+                        },
+                        "rhs": {
+                          "id": "fahrenheit_minus",
+                          "use": "const_num",
+                          "params": {"value": 29}
+                        }
+                      }
+                    },
+                    "rhs

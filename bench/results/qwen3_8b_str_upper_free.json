@@ -1,0 +1,1 @@
+{"app":"uppercaseArg","capabilities":["io_read","io_write"],"nodes":[{"id":"arg","use":"arg_str","params":{"index":1}},{"id":"upper","use":"upper_str","bind":{"text":"arg"}},{"id":"out","use":"print_str","bind":{"value":"upper"}}]}
