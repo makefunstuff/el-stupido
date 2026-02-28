@@ -132,59 +132,6 @@ impl AtomicClient {
         Ok(resolved)
     }
 
-    /// Structured query via /query endpoint (sled indexes, server-side filtering).
-    /// property + value filtering, optional sort, pagination.
-    pub fn query(
-        &self,
-        property: &str,
-        value: &str,
-        sort_by: Option<&str>,
-        sort_desc: bool,
-        limit: usize,
-    ) -> Result<Vec<Value>, String> {
-        let mut url = format!(
-            "{}/query?property={}&value={}&page_size={}",
-            self.server_url,
-            urlenc(property),
-            urlenc(value),
-            limit
-        );
-        if let Some(sort) = sort_by {
-            url.push_str(&format!("&sort_by={}", urlenc(sort)));
-        }
-        if sort_desc {
-            url.push_str("&sort_desc=true");
-        }
-
-        let result = self.get(&url)?;
-
-        let members = result
-            .get("https://atomicdata.dev/properties/collection/members")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        // Members are already resolved resources (inline objects)
-        Ok(members)
-    }
-
-    /// Query all resources of a given class. Convenience over query(isA, class_url).
-    pub fn query_class(
-        &self,
-        class_name: &str,
-        sort_by: Option<&str>,
-        sort_desc: bool,
-        limit: usize,
-    ) -> Result<Vec<Value>, String> {
-        self.query(
-            PROP_IS_A,
-            &self.class_url(class_name),
-            sort_by,
-            sort_desc,
-            limit,
-        )
-    }
-
     // --- Writes ---
 
     /// Create a new resource.

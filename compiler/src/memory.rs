@@ -148,18 +148,12 @@ pub fn update_note_status(hash: &str, status: &str) {
 }
 
 /// List notes with optional kind/context filters.
+/// Local file is the source of truth.
 pub fn list_notes(
     kind: Option<&str>,
     context: Option<&str>,
     limit: usize,
 ) -> Vec<(String, MemoryNote)> {
-    if let Some(client) = crate::atomic::AtomicClient::from_env() {
-        match atomic_list_notes(&client, kind, context, limit) {
-            Ok(notes) if !notes.is_empty() => return notes,
-            Ok(_) => {}
-            Err(e) => eprintln!("warning: atomic-server: {e}"),
-        }
-    }
     local_list_notes(kind, context, limit)
 }
 
@@ -185,13 +179,8 @@ fn local_list_notes(
 // --- Log ---
 
 /// Activity log: notes by time, newest first.
+/// Local file is the source of truth.
 pub fn log(limit: usize) -> Vec<serde_json::Value> {
-    if let Some(client) = crate::atomic::AtomicClient::from_env() {
-        match atomic_log(&client, limit) {
-            Ok(items) => return items,
-            Err(e) => eprintln!("warning: atomic-server: {e}"),
-        }
-    }
     local_log(limit)
 }
 
@@ -226,13 +215,32 @@ fn local_log(limit: usize) -> Vec<serde_json::Value> {
 
 /// Recall: search notes. Compact output — LLM drills in with `show`.
 pub fn recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
+    // Always search local first — it's the source of truth.
+    // Atomic-server is a sync target, not the primary store.
+    let mut results = local_recall(query, limit);
+
+    // Supplement with atomic-server results (may find notes not yet in local file)
     if let Some(client) = crate::atomic::AtomicClient::from_env() {
         match atomic_recall(&client, query, limit) {
-            Ok(results) => return results,
+            Ok(remote) => {
+                let seen: std::collections::HashSet<String> = results
+                    .iter()
+                    .filter_map(|r| r["hash"].as_str().map(|s| s.to_string()))
+                    .collect();
+                for r in remote {
+                    if let Some(h) = r["hash"].as_str() {
+                        if !seen.contains(h) {
+                            results.push(r);
+                        }
+                    }
+                }
+            }
             Err(e) => eprintln!("warning: atomic-server: {e}"),
         }
     }
-    local_recall(query, limit)
+
+    results.truncate(limit);
+    results
 }
 
 fn local_recall(query: &str, limit: usize) -> Vec<serde_json::Value> {
@@ -381,72 +389,6 @@ pub fn sync_to_atomic() -> Result<usize, String> {
 }
 
 // --- Atomic-server backend ---
-
-/// Log via atomic-server: query all notes by class, sorted by created desc.
-fn atomic_log(
-    client: &crate::atomic::AtomicClient,
-    limit: usize,
-) -> Result<Vec<serde_json::Value>, String> {
-    let results = client.query_class("note", Some(&client.prop_url("created")), true, limit)?;
-
-    let mut items: Vec<serde_json::Value> = Vec::new();
-    for r in &results {
-        if let Some((hash, note)) = atomic_resource_to_note(client, r) {
-            if note.status == "resolved" || note.status == "superseded" {
-                continue;
-            }
-            items.push(serde_json::json!({
-                "type": "note",
-                "hash": &hash[..12.min(hash.len())],
-                "kind": note.kind,
-                "summary": note.summary,
-                "context": note.context,
-                "time": &note.created,
-            }));
-        }
-    }
-    Ok(items)
-}
-
-/// List notes via atomic-server: query by kind or context property.
-fn atomic_list_notes(
-    client: &crate::atomic::AtomicClient,
-    kind: Option<&str>,
-    context: Option<&str>,
-    limit: usize,
-) -> Result<Vec<(String, MemoryNote)>, String> {
-    let results = if let Some(k) = kind {
-        client.query(
-            &client.prop_url("note-kind"),
-            k,
-            Some(&client.prop_url("created")),
-            true,
-            limit,
-        )?
-    } else if let Some(c) = context {
-        client.query(
-            &client.prop_url("note-context"),
-            c,
-            Some(&client.prop_url("created")),
-            true,
-            limit,
-        )?
-    } else {
-        client.query_class("note", Some(&client.prop_url("created")), true, limit)?
-    };
-
-    let mut notes: Vec<(String, MemoryNote)> = results
-        .iter()
-        .filter_map(|r| atomic_resource_to_note(client, r))
-        .filter(|(_, n)| {
-            (kind.is_none() || kind == Some(n.kind.as_str()))
-                && (context.is_none() || context == Some(n.context.as_str()))
-        })
-        .collect();
-    notes.sort_by(|a, b| b.1.created.cmp(&a.1.created));
-    notes.truncate(limit);
-    Ok(notes)
-}
 
 /// Recall via atomic-server: full-text search for notes.
 fn atomic_recall(

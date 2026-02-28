@@ -1,15 +1,34 @@
 {
-  "generated": "2026-03-01T00:00:00Z",
+  "generated": "2026-03-01",
   "source": "~/.esc/context/history.jsonl",
   "status": "no_history_file",
-  "note": "No context history.jsonl exists yet — ~/.esc/context/ directory not created. Context session is empty (turn 13, 0 slots, 0 archived). No compactions to perform.",
-  "context_state": {
-    "turn": 13,
-    "tokens_used": 0,
-    "token_budget": 100000,
-    "active_slots": 0,
-    "archived_slots": 0,
-    "wisdom_entries": 0
-  },
-  "compactions": []
+  "note": "history.jsonl does not exist — no active context session. Context watch is disabled, context assemble reports no active session. ~/.esc/context/ directory absent.",
+  "compactions_performed": [
+    {
+      "group": "compilation-results",
+      "action": "superseded",
+      "kept": "15259e08b09e",
+      "superseded": ["4459718f140a", "4306ddf4e9e3"],
+      "reason": "3 duplicate compilation notes for esc v0.1.0 — kept newest with most complete warning info"
+    },
+    {
+      "group": "python-tracebacks",
+      "action": "superseded",
+      "kept": "8737cbda71fb",
+      "superseded": ["abde534da88c"],
+      "reason": "2 near-identical Python traceback errors from context analysis scripts"
+    },
+    {
+      "group": "session-snapshots",
+      "action": "superseded",
+      "kept": "8603031f97fd",
+      "superseded": ["84078dfb8311", "8b5571f9305d", "bfce62b96fb2", "899823586889", "50edd786c206", "7433dc55201d", "d12a32e9ee02", "2f2f7a68cb65", "c20ca3b71676", "83ee9c70e0cc", "8ea02b32197b", "48897a9ed4ad"],
+      "reason": "12 session-snapshot notes (10-121 messages) already consolidated by existing supersession note 8603031f97fd"
+    }
+  ],
+  "summary": {
+    "total_notes_examined": 20,
+    "notes_superseded": 15,
+    "notes_remaining_active": 5
+  }
 }
