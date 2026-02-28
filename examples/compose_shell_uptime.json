@@ -1,0 +1,14 @@
+{
+  "app": "uptime_demo",
+  "capabilities": ["shell_exec", "io_write"],
+  "nodes": [
+    { "id": "cmd1", "use": "shell", "params": { "cmd": "uptime -p" } },
+    { "id": "cmd2", "use": "shell", "params": { "cmd": "uname -sr" } },
+    { "id": "label1", "use": "const_str", "params": { "value": "Uptime: " } },
+    { "id": "label2", "use": "const_str", "params": { "value": "Kernel: " } },
+    { "id": "line1", "use": "concat", "bind": { "left": "label1", "right": "cmd1" } },
+    { "id": "line2", "use": "concat", "bind": { "left": "label2", "right": "cmd2" } },
+    { "id": "result", "use": "concat", "bind": { "left": "line1", "right": "line2" } },
+    { "id": "out", "use": "print_str", "bind": { "value": "result" } }
+  ]
+}

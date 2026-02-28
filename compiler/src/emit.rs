@@ -121,6 +121,163 @@ fn emit_http_helper(out: &mut String) {
     writeln!(out, "").unwrap();
 }
 
+fn emit_vision_helper(out: &mut String) {
+    use std::fmt::Write;
+    writeln!(
+        out,
+        "fn esc_vision(model: &str, image_path: &str, prompt: &str) -> String {{"
+    )
+    .unwrap();
+    writeln!(out, "    use std::io::Read;").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Read and base64-encode the image").unwrap();
+    writeln!(
+        out,
+        "    let image_data = match std::fs::read(image_path) {{"
+    )
+    .unwrap();
+    writeln!(out, "        Ok(d) => d,").unwrap();
+    writeln!(out, "        Err(e) => {{ eprintln!(\"vision: cannot read '{{}}': {{}}\", image_path, e); return String::new(); }},").unwrap();
+    writeln!(out, "    }};").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Base64 encode (no external deps)").unwrap();
+    writeln!(out, "    let b64 = {{").unwrap();
+    writeln!(out, "        const CHARS: &[u8] = b\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/\";").unwrap();
+    writeln!(
+        out,
+        "        let mut out = String::with_capacity((image_data.len() + 2) / 3 * 4);"
+    )
+    .unwrap();
+    writeln!(out, "        for chunk in image_data.chunks(3) {{").unwrap();
+    writeln!(out, "            let b0 = chunk[0] as u32;").unwrap();
+    writeln!(
+        out,
+        "            let b1 = if chunk.len() > 1 {{ chunk[1] as u32 }} else {{ 0 }};"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            let b2 = if chunk.len() > 2 {{ chunk[2] as u32 }} else {{ 0 }};"
+    )
+    .unwrap();
+    writeln!(out, "            let triple = (b0 << 16) | (b1 << 8) | b2;").unwrap();
+    writeln!(
+        out,
+        "            out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);"
+    )
+    .unwrap();
+    writeln!(out, "            if chunk.len() > 1 {{ out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); }} else {{ out.push('='); }}").unwrap();
+    writeln!(out, "            if chunk.len() > 2 {{ out.push(CHARS[(triple & 0x3F) as usize] as char); }} else {{ out.push('='); }}").unwrap();
+    writeln!(out, "        }}").unwrap();
+    writeln!(out, "        out").unwrap();
+    writeln!(out, "    }};").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Call Ollama vision API").unwrap();
+    writeln!(out, "    let ollama_host = std::env::var(\"OLLAMA_HOST\").unwrap_or_else(|_| \"http://localhost:11434\".to_string());").unwrap();
+    writeln!(out, "    let payload = format!(r#\"{{\"model\":\"{{}}\",\"prompt\":\"{{}}\",\"images\":[\"{{}}\"],\"stream\":false,\"options\":{{\"num_predict\":512}}}}\"#, model, prompt, b64);").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    // Use curl to POST to Ollama (no TLS dependency)").unwrap();
+    writeln!(out, "    let output = std::process::Command::new(\"curl\")").unwrap();
+    writeln!(
+        out,
+        "        .args(&[\"-s\", \"--max-time\", \"60\", \"-X\", \"POST\","
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            &format!(\"{{}}/api/generate\", ollama_host),"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            \"-H\", \"Content-Type: application/json\","
+    )
+    .unwrap();
+    writeln!(out, "            \"-d\", &payload])").unwrap();
+    writeln!(out, "        .output();").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "    match output {{").unwrap();
+    writeln!(out, "        Ok(o) if o.status.success() => {{").unwrap();
+    writeln!(
+        out,
+        "            let body = String::from_utf8_lossy(&o.stdout);"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            // Parse minimal JSON to extract \"response\" field"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "            if let Some(start) = body.find(\"\\\"response\\\":\\\"\") {{"
+    )
+    .unwrap();
+    writeln!(out, "                let rest = &body[start + 12..];").unwrap();
+    writeln!(out, "                let mut result = String::new();").unwrap();
+    writeln!(out, "                let mut chars = rest.chars();").unwrap();
+    writeln!(out, "                while let Some(c) = chars.next() {{").unwrap();
+    writeln!(out, "                    if c == '\\\\' {{").unwrap();
+    writeln!(out, "                        match chars.next() {{").unwrap();
+    writeln!(
+        out,
+        "                            Some('n') => result.push('\\n'),"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "                            Some('t') => result.push('\\t'),"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "                            Some('\"') => result.push('\"'),"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "                            Some('\\\\') => result.push('\\\\'),"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "                            Some(o) => {{ result.push('\\\\'); result.push(o); }},"
+    )
+    .unwrap();
+    writeln!(out, "                            None => break,").unwrap();
+    writeln!(out, "                        }}").unwrap();
+    writeln!(out, "                    }} else if c == '\"' {{").unwrap();
+    writeln!(out, "                        break;").unwrap();
+    writeln!(out, "                    }} else {{").unwrap();
+    writeln!(out, "                        result.push(c);").unwrap();
+    writeln!(out, "                    }}").unwrap();
+    writeln!(out, "                }}").unwrap();
+    writeln!(out, "                result").unwrap();
+    writeln!(out, "            }} else {{").unwrap();
+    writeln!(
+        out,
+        "                eprintln!(\"vision: unexpected response format\");"
+    )
+    .unwrap();
+    writeln!(out, "                String::new()").unwrap();
+    writeln!(out, "            }}").unwrap();
+    writeln!(out, "        }}").unwrap();
+    writeln!(out, "        Ok(o) => {{ eprintln!(\"vision: curl failed with {{}}\", o.status); String::new() }}").unwrap();
+    writeln!(
+        out,
+        "        Err(e) => {{ eprintln!(\"vision: {{}}\", e); String::new() }}"
+    )
+    .unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+}
+
 fn bind_var(
     node: &crate::compose::ValidNode,
     bind_name: &str,
@@ -149,17 +306,22 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
     writeln!(out).unwrap();
 
     let mut needs_http_helper = false;
+    let mut needs_vision_helper = false;
 
-    // First pass: check if we need the HTTP helper
+    // First pass: check if we need helper functions
     for node in &comp.nodes {
-        if node.primitive_id == "http_get" || node.primitive_id == "http_get_dyn" {
-            needs_http_helper = true;
-            break;
+        match node.primitive_id.as_str() {
+            "http_get" | "http_get_dyn" => needs_http_helper = true,
+            "vision" | "vision_prompt" => needs_vision_helper = true,
+            _ => {}
         }
     }
 
     if needs_http_helper {
         emit_http_helper(&mut out);
+    }
+    if needs_vision_helper {
+        emit_vision_helper(&mut out);
     }
 
     writeln!(out, "fn main() {{").unwrap();
@@ -547,6 +709,156 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
             "http_get_dyn" => {
                 let url_var = bind_var(node, "url", &vars);
                 writeln!(out, "    let {var}: String = esc_http_get(&{url_var});").unwrap();
+            }
+
+            // ── Shell execution primitives ──────────────────────────
+            "shell" => {
+                let cmd = node.params["cmd"].as_str().unwrap();
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(
+                    out,
+                    "        let output = std::process::Command::new(\"sh\")"
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "            .args(&[\"-c\", \"{}\"])",
+                    rust_string(cmd)
+                )
+                .unwrap();
+                writeln!(out, "            .stderr(std::process::Stdio::inherit())").unwrap();
+                writeln!(out, "            .output();").unwrap();
+                writeln!(out, "        match output {{").unwrap();
+                writeln!(out, "            Ok(o) => String::from_utf8_lossy(&o.stdout).trim_end().to_string(),").unwrap();
+                writeln!(
+                    out,
+                    "            Err(e) => {{ eprintln!(\"shell: {{}}\", e); String::new() }},"
+                )
+                .unwrap();
+                writeln!(out, "        }}").unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+            "shell_dyn" => {
+                let cmd_var = bind_var(node, "cmd", &vars);
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(
+                    out,
+                    "        let output = std::process::Command::new(\"sh\")"
+                )
+                .unwrap();
+                writeln!(out, "            .args(&[\"-c\", &{cmd_var}])").unwrap();
+                writeln!(out, "            .stderr(std::process::Stdio::inherit())").unwrap();
+                writeln!(out, "            .output();").unwrap();
+                writeln!(out, "        match output {{").unwrap();
+                writeln!(out, "            Ok(o) => String::from_utf8_lossy(&o.stdout).trim_end().to_string(),").unwrap();
+                writeln!(
+                    out,
+                    "            Err(e) => {{ eprintln!(\"shell_dyn: {{}}\", e); String::new() }},"
+                )
+                .unwrap();
+                writeln!(out, "        }}").unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+            "shell_pipe" => {
+                let left = bind_var(node, "left", &vars);
+                let right = bind_var(node, "right", &vars);
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(
+                    out,
+                    "        let pipe_cmd = format!(\"{{}} | {{}}\", {left}, {right});"
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "        let output = std::process::Command::new(\"sh\")"
+                )
+                .unwrap();
+                writeln!(out, "            .args(&[\"-c\", &pipe_cmd])").unwrap();
+                writeln!(out, "            .stderr(std::process::Stdio::inherit())").unwrap();
+                writeln!(out, "            .output();").unwrap();
+                writeln!(out, "        match output {{").unwrap();
+                writeln!(out, "            Ok(o) => String::from_utf8_lossy(&o.stdout).trim_end().to_string(),").unwrap();
+                writeln!(out, "            Err(e) => {{ eprintln!(\"shell_pipe: {{}}\", e); String::new() }},").unwrap();
+                writeln!(out, "        }}").unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+            "shell_input" => {
+                let cmd_var = bind_var(node, "cmd", &vars);
+                let input_var = bind_var(node, "input", &vars);
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(out, "        use std::io::Write as _;").unwrap();
+                writeln!(
+                    out,
+                    "        let mut child = std::process::Command::new(\"sh\")"
+                )
+                .unwrap();
+                writeln!(out, "            .args(&[\"-c\", &{cmd_var}])").unwrap();
+                writeln!(out, "            .stdin(std::process::Stdio::piped())").unwrap();
+                writeln!(out, "            .stdout(std::process::Stdio::piped())").unwrap();
+                writeln!(out, "            .stderr(std::process::Stdio::inherit())").unwrap();
+                writeln!(out, "            .spawn()").unwrap();
+                writeln!(out, "            .expect(\"failed to spawn shell\");").unwrap();
+                writeln!(
+                    out,
+                    "        if let Some(mut stdin) = child.stdin.take() {{"
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "            let _ = stdin.write_all({input_var}.as_bytes());"
+                )
+                .unwrap();
+                writeln!(out, "        }}").unwrap();
+                writeln!(
+                    out,
+                    "        let output = child.wait_with_output().expect(\"shell failed\");"
+                )
+                .unwrap();
+                writeln!(
+                    out,
+                    "        String::from_utf8_lossy(&output.stdout).trim_end().to_string()"
+                )
+                .unwrap();
+                writeln!(out, "    }};").unwrap();
+            }
+
+            // ── Vision primitives ───────────────────────────────────
+            "vision" => {
+                let model = node
+                    .params
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("moondream");
+                let path_var = bind_var(node, "path", &vars);
+                writeln!(out, "    let {var}: String = esc_vision(\"{}\", &{path_var}, \"Describe this image.\");", rust_string(model)).unwrap();
+            }
+            "vision_prompt" => {
+                let model = node
+                    .params
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("moondream");
+                let path_var = bind_var(node, "path", &vars);
+                let prompt_var = bind_var(node, "prompt", &vars);
+                writeln!(
+                    out,
+                    "    let {var}: String = esc_vision(\"{}\", &{path_var}, &{prompt_var});",
+                    rust_string(model)
+                )
+                .unwrap();
+            }
+            "screenshot" => {
+                writeln!(out, "    let {var}: String = {{").unwrap();
+                writeln!(
+                    out,
+                    "        let path = \"/tmp/esc_screenshot.png\".to_string();"
+                )
+                .unwrap();
+                writeln!(out, "        let _ = std::process::Command::new(\"sh\")").unwrap();
+                writeln!(out, "            .args(&[\"-c\", \"grim /tmp/esc_screenshot.png 2>/dev/null || scrot /tmp/esc_screenshot.png 2>/dev/null || screencapture /tmp/esc_screenshot.png 2>/dev/null\"])").unwrap();
+                writeln!(out, "            .output();").unwrap();
+                writeln!(out, "        path").unwrap();
+                writeln!(out, "    }};").unwrap();
             }
             other => {
                 writeln!(

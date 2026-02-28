@@ -1,0 +1,10 @@
+{
+  "app": "pipe_demo",
+  "capabilities": ["shell_exec", "io_write"],
+  "nodes": [
+    { "id": "ls_cmd", "use": "shell", "params": { "cmd": "ls /usr/bin" } },
+    { "id": "grep_cmd", "use": "const_str", "params": { "value": "grep python" } },
+    { "id": "piped", "use": "shell_input", "bind": { "cmd": "grep_cmd", "input": "ls_cmd" } },
+    { "id": "out", "use": "print_str", "bind": { "value": "piped" } }
+  ]
+}

@@ -996,5 +996,125 @@ impl Registry {
 
             effects: vec!["net_read"],
         });
+
+        // ── Shell execution primitives ──────────────────────────────
+
+        self.add(Primitive {
+            id: "shell",
+            description: "Execute a static shell command, return stdout as string",
+            params: vec![ParamDef {
+                name: "cmd",
+                ty: ParamType::Str,
+                required: true,
+            }],
+            binds: vec![],
+            provides: vec!["str"],
+            effects: vec!["shell_exec"],
+        });
+
+        self.add(Primitive {
+            id: "shell_dyn",
+            description: "Execute a dynamically-bound shell command, return stdout",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "cmd",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            effects: vec!["shell_exec"],
+        });
+
+        self.add(Primitive {
+            id: "shell_pipe",
+            description: "Pipe first command stdout into second command stdin",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "left",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "right",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            effects: vec!["shell_exec"],
+        });
+
+        self.add(Primitive {
+            id: "shell_input",
+            description: "Execute a shell command with string piped to stdin, return stdout",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "cmd",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "input",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            effects: vec!["shell_exec"],
+        });
+
+        // ── Vision primitives ────────────────────────────────────
+
+        self.add(Primitive {
+            id: "vision",
+            description: "Describe an image file using a local vision model via Ollama",
+            params: vec![ParamDef {
+                name: "model",
+                ty: ParamType::Str,
+                required: false,
+            }],
+            binds: vec![BindDef {
+                name: "path",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["str"],
+            effects: vec!["vision_read"],
+        });
+
+        self.add(Primitive {
+            id: "vision_prompt",
+            description: "Ask a question about an image using a local vision model",
+            params: vec![ParamDef {
+                name: "model",
+                ty: ParamType::Str,
+                required: false,
+            }],
+            binds: vec![
+                BindDef {
+                    name: "path",
+                    capability: "str",
+                    required: true,
+                },
+                BindDef {
+                    name: "prompt",
+                    capability: "str",
+                    required: true,
+                },
+            ],
+            provides: vec!["str"],
+            effects: vec!["vision_read"],
+        });
+
+        self.add(Primitive {
+            id: "screenshot",
+            description: "Capture a screenshot, save to path, return the path",
+            params: vec![],
+            binds: vec![],
+            provides: vec!["str"],
+            effects: vec!["shell_exec"],
+        });
     }
 }

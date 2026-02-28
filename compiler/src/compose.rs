@@ -375,6 +375,13 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
             "append_file" => "af",
             "http_get" => "hg",
             "http_get_dyn" => "hd",
+            "shell" => "sh",
+            "shell_dyn" => "sd",
+            "shell_pipe" => "sp",
+            "shell_input" => "si",
+            "vision" => "vi",
+            "vision_prompt" => "vp",
+            "screenshot" => "ss2",
             other => other,
         };
 
@@ -395,8 +402,8 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
                     write!(args, " \"{}\"", s).unwrap();
                 }
             }
-            "http_get" => {
-                if let Some(ParamValue::Str(s)) = node.params.get("url") {
+            "http_get" | "shell" => {
+                if let Some(ParamValue::Str(s)) = node.params.get("url").or(node.params.get("cmd")) {
                     write!(args, " \"{}\"", s).unwrap();
                 }
             }
@@ -432,9 +439,13 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
                 "select_num" | "select_str" => vec!["cond", "then", "else"],
                 "repeat_str" => vec!["text", "times"],
                 "read_file_dyn" | "env_str_dyn" => vec!["path", "name"],
-                "http_get_dyn" => vec!["url"],
+                "http_get_dyn" | "shell_dyn" => vec!["url", "cmd"],
                 "write_file_dyn" => vec!["path", "content"],
                 "exit_code" => vec!["code"],
+                "shell_pipe" => vec!["left", "right"],
+                "shell_input" => vec!["cmd", "input"],
+                "vision" => vec!["path"],
+                "vision_prompt" => vec!["path", "prompt"],
                 "format_str" => vec!["v1", "v2"],
                 "substr" => vec!["text", "start", "len"],
                 "contains_str" => vec!["text", "needle"],
@@ -499,7 +510,12 @@ pub struct ValidNode {
 fn parse_manifest(input: &str) -> Result<Manifest, ComposeError> {
     let trimmed = input.trim_start();
     if trimmed.starts_with('{') {
-        return Ok(serde_json::from_str(trimmed)?);
+        // Try strict parse first
+        if let Ok(m) = serde_json::from_str::<Manifest>(trimmed) {
+            return Ok(m);
+        }
+        // Fall back to tolerant JSON repair
+        return parse_json_tolerant(trimmed);
     }
 
     if looks_like_tape(input)? {
@@ -509,9 +525,511 @@ fn parse_manifest(input: &str) -> Result<Manifest, ComposeError> {
     parse_esc_manifest(input)
 }
 
+/// Tolerant JSON parser: accepts inline constants in binds, literal values,
+/// forward references (reordered), and other common LLM mistakes.
+fn parse_json_tolerant(input: &str) -> Result<Manifest, ComposeError> {
+    let raw: serde_json::Value = serde_json::from_str(input)?;
+    let obj = raw.as_object().ok_or_else(|| ComposeError::Json(
+        serde_json::from_str::<Manifest>("{}").unwrap_err()
+    ))?;
+
+    let app = obj.get("app")
+        .and_then(|v| v.as_str())
+        .unwrap_or("repaired")
+        .to_string();
+
+    let capabilities: Vec<String> = obj.get("capabilities")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    let raw_nodes = obj.get("nodes")
+        .and_then(|v| v.as_array())
+        .ok_or(ComposeError::Empty)?;
+
+    let mut nodes: Vec<NodeSpec> = Vec::new();
+    let mut synth_counter: usize = 0;
+
+    for raw_node in raw_nodes {
+        let node_obj = match raw_node.as_object() {
+            Some(o) => o,
+            None => continue,
+        };
+
+        let id = node_obj.get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("_anon")
+            .to_string();
+
+        let primitive = node_obj.get("use")
+            .or_else(|| node_obj.get("type"))
+            .or_else(|| node_obj.get("op"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("_unknown")
+            .to_string();
+
+        // Parse params — accept both proper ParamValues and raw values
+        let mut params: HashMap<String, ParamValue> = HashMap::new();
+        if let Some(p) = node_obj.get("params").and_then(|v| v.as_object()) {
+            for (k, v) in p {
+                match v {
+                    serde_json::Value::Number(n) => {
+                        params.insert(k.clone(), ParamValue::Number(n.as_f64().unwrap_or(0.0)));
+                    }
+                    serde_json::Value::String(s) => {
+                        params.insert(k.clone(), ParamValue::Str(s.clone()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Parse binds — THIS IS WHERE REPAIR HAPPENS
+        let mut bind: HashMap<String, String> = HashMap::new();
+        let raw_bind = node_obj.get("bind")
+            .or_else(|| node_obj.get("binds"));
+
+        if let Some(bind_val) = raw_bind.and_then(|v| v.as_object()) {
+            for (bname, bval) in bind_val {
+                match bval {
+                    // Normal case: bind is a string node ID
+                    serde_json::Value::String(s) => {
+                        bind.insert(bname.clone(), s.clone());
+                    }
+                    // REPAIR: bind is an inline node definition {"use":"const_num","params":{"value":32}}
+                    serde_json::Value::Object(inline) => {
+                        let synth_id = format!("_r{}", synth_counter);
+                        synth_counter += 1;
+
+                        // Try to extract a proper node from the inline object
+                        let inline_prim = inline.get("use")
+                            .or_else(|| inline.get("type"))
+                            .and_then(|v| v.as_str());
+
+                        if let Some(prim_name) = inline_prim {
+                            // Full inline node: {"use":"const_num","params":{"value":32}}
+                            let mut inline_params: HashMap<String, ParamValue> = HashMap::new();
+                            if let Some(p) = inline.get("params").and_then(|v| v.as_object()) {
+                                for (pk, pv) in p {
+                                    match pv {
+                                        serde_json::Value::Number(n) => {
+                                            inline_params.insert(pk.clone(), ParamValue::Number(n.as_f64().unwrap_or(0.0)));
+                                        }
+                                        serde_json::Value::String(s) => {
+                                            inline_params.insert(pk.clone(), ParamValue::Str(s.clone()));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            nodes.push(NodeSpec {
+                                id: synth_id.clone(),
+                                primitive: prim_name.to_string(),
+                                params: inline_params,
+                                bind: HashMap::new(),
+                            });
+                        } else if let Some(val) = inline.get("value") {
+                            // Shorthand: {"value": 32} → const_num or const_str
+                            match val {
+                                serde_json::Value::Number(n) => {
+                                    let mut p = HashMap::new();
+                                    p.insert("value".to_string(), ParamValue::Number(n.as_f64().unwrap_or(0.0)));
+                                    nodes.push(NodeSpec {
+                                        id: synth_id.clone(),
+                                        primitive: "const_num".to_string(),
+                                        params: p,
+                                        bind: HashMap::new(),
+                                    });
+                                }
+                                serde_json::Value::String(s) => {
+                                    let mut p = HashMap::new();
+                                    p.insert("value".to_string(), ParamValue::Str(s.clone()));
+                                    nodes.push(NodeSpec {
+                                        id: synth_id.clone(),
+                                        primitive: "const_str".to_string(),
+                                        params: p,
+                                        bind: HashMap::new(),
+                                    });
+                                }
+                                _ => continue,
+                            }
+                        } else {
+                            continue;
+                        }
+                        bind.insert(bname.clone(), synth_id);
+                    }
+                    // REPAIR: bind is a literal number like 32
+                    serde_json::Value::Number(n) => {
+                        let synth_id = format!("_r{}", synth_counter);
+                        synth_counter += 1;
+                        let mut p = HashMap::new();
+                        p.insert("value".to_string(), ParamValue::Number(n.as_f64().unwrap_or(0.0)));
+                        nodes.push(NodeSpec {
+                            id: synth_id.clone(),
+                            primitive: "const_num".to_string(),
+                            params: p,
+                            bind: HashMap::new(),
+                        });
+                        bind.insert(bname.clone(), synth_id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        nodes.push(NodeSpec { id, primitive, params, bind });
+    }
+
+    // REPAIR: check for string literals used as bind targets that aren't node IDs
+    let all_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut extra_nodes: Vec<NodeSpec> = Vec::new();
+    for node in &mut nodes {
+        let mut fixes: Vec<(String, String)> = Vec::new();
+        for (bname, bval) in &node.bind {
+            if !all_ids.contains(bval) && !extra_nodes.iter().any(|n| n.id == *bval) {
+                // Not a known node ID — might be a literal string or number
+                if let Ok(n) = bval.parse::<f64>() {
+                    let synth_id = format!("_r{}", synth_counter);
+                    synth_counter += 1;
+                    let mut p = HashMap::new();
+                    p.insert("value".to_string(), ParamValue::Number(n));
+                    extra_nodes.push(NodeSpec {
+                        id: synth_id.clone(),
+                        primitive: "const_num".to_string(),
+                        params: p,
+                        bind: HashMap::new(),
+                    });
+                    fixes.push((bname.clone(), synth_id));
+                } else if bval.contains(' ') || bval.contains(',') || bval.contains('!') {
+                    // Looks like a string literal, not an ID
+                    let synth_id = format!("_r{}", synth_counter);
+                    synth_counter += 1;
+                    let mut p = HashMap::new();
+                    p.insert("value".to_string(), ParamValue::Str(bval.clone()));
+                    extra_nodes.push(NodeSpec {
+                        id: synth_id.clone(),
+                        primitive: "const_str".to_string(),
+                        params: p,
+                        bind: HashMap::new(),
+                    });
+                    fixes.push((bname.clone(), synth_id));
+                }
+            }
+        }
+        for (bname, new_id) in fixes {
+            node.bind.insert(bname, new_id);
+        }
+    }
+
+    // Insert synthesized nodes at the beginning (they're constants, safe to go first)
+    if !extra_nodes.is_empty() {
+        let mut all = extra_nodes;
+        all.append(&mut nodes);
+        nodes = all;
+    }
+
+    // REPAIR: topological sort to fix forward references
+    let node_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut sorted: Vec<NodeSpec> = Vec::with_capacity(nodes.len());
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut remaining = nodes;
+    let max_iters = remaining.len() * remaining.len() + 1;
+    let mut iter_count = 0;
+
+    while !remaining.is_empty() && iter_count < max_iters {
+        iter_count += 1;
+        let mut progress = false;
+        let mut next_remaining = Vec::new();
+
+        for node in remaining {
+            let deps_met = node.bind.values().all(|target| {
+                placed.contains(target) || !node_ids.contains(target)
+            });
+            if deps_met {
+                placed.insert(node.id.clone());
+                sorted.push(node);
+                progress = true;
+            } else {
+                next_remaining.push(node);
+            }
+        }
+
+        remaining = next_remaining;
+        if !progress {
+            // Cycle or unresolvable — just append remaining as-is, let validation catch it
+            sorted.extend(remaining);
+            break;
+        }
+    }
+
+    Ok(Manifest {
+        app,
+        capabilities,
+        nodes: sorted,
+    })
+}
+
+/// Semantic repair pass: fix common LLM mistakes in manifests.
+/// Runs after parsing, before validation.
+/// - Fixes wrong primitive names (print → print_num/print_str, run → shell, etc.)
+/// - Fixes wrong bind names (a/b → left/right for binary ops, etc.)
+/// - Auto-infers missing capabilities from primitive effects.
+fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
+    // ── Primitive name aliases ──
+    // Map common LLM mistakes to correct primitive names.
+    let prim_aliases: HashMap<&str, &str> = [
+        ("run", "shell"),
+        ("exec", "shell"),
+        ("execute", "shell"),
+        ("command", "shell"),
+        ("cmd", "shell"),
+        ("bash", "shell"),
+        ("pipe", "shell_pipe"),
+        ("number", "const_num"),
+        ("string", "const_str"),
+        ("str", "const_str"),
+        ("num", "const_num"),
+        ("constant", "const_num"),
+        ("read", "read_file"),
+        ("write", "write_file"),
+        ("display", "print_str"),
+        ("output", "print_str"),
+        ("show", "print_str"),
+        ("echo", "print_str"),
+        ("cat", "read_file"),
+        ("join", "concat"),
+        ("merge", "concat"),
+        ("append", "concat"),
+        ("sum", "add"),
+        ("plus", "add"),
+        ("minus", "sub"),
+        ("subtract", "sub"),
+        ("difference", "sub"),
+        ("times", "mul"),
+        ("product", "mul"),
+        ("divide", "div"),
+        ("quotient", "div"),
+        ("modulo", "mod_op"),
+        ("remainder", "mod_op"),
+        ("power", "pow"),
+        ("exponent", "pow"),
+        ("format", "fmt"),
+        ("template", "fmt"),
+        ("sprintf", "fmt"),
+        ("lookup", "env_var"),
+        ("getenv", "env_var"),
+        ("download", "http_get"),
+        ("fetch", "http_get"),
+        ("curl", "http_get"),
+        ("wget", "http_get"),
+        ("describe", "vision"),
+        ("see", "vision"),
+        ("look", "vision"),
+        ("capture", "screenshot"),
+    ].into_iter().collect();
+
+    // "print" is ambiguous — decide based on what it binds to.
+    // First pass: collect which node IDs are numeric.
+    let numeric_ids: HashSet<String> = manifest.nodes.iter()
+        .filter(|n| matches!(
+            n.primitive.as_str(),
+            "const_num" | "add" | "sub" | "mul" | "div" | "mod_op" | "pow"
+            | "abs" | "neg" | "floor" | "ceil" | "round" | "sqrt" | "min" | "max"
+            | "clamp" | "to_num" | "parse_json_num" | "count_lines" | "str_len"
+            | "num" | "number" | "sum" | "plus" | "minus" | "times" | "divide"
+        ))
+        .map(|n| n.id.clone())
+        .collect();
+
+    for node in &mut manifest.nodes {
+        // ── Fix primitive names ──
+        let prim_lower = node.primitive.to_lowercase();
+        if let Some(&correct) = prim_aliases.get(prim_lower.as_str()) {
+            node.primitive = correct.to_string();
+        }
+
+        // Handle ambiguous "print"
+        if prim_lower == "print" {
+            let looks_numeric = node.bind.get("value")
+                .map(|target_id| numeric_ids.contains(target_id))
+                .unwrap_or(false);
+            node.primitive = if looks_numeric { "print_num".to_string() } else { "print_str".to_string() };
+        }
+
+        // ── Fix bind names ──
+        if let Some(prim) = registry.get(&node.primitive) {
+            let expected_binds: Vec<&str> = prim.binds.iter().map(|b| b.name).collect();
+
+            // Common positional aliases for binary operators
+            // Some prims use lhs/rhs (add, sub, mul, div), others use left/right (concat, shell_pipe)
+            let is_lhs_rhs = expected_binds == vec!["lhs", "rhs"];
+            let is_left_right = expected_binds == vec!["left", "right"];
+            if is_lhs_rhs || is_left_right {
+                let (first_name, second_name) = if is_lhs_rhs {
+                    ("lhs", "rhs")
+                } else {
+                    ("left", "right")
+                };
+                let mut fixes: Vec<(String, String)> = Vec::new();
+                for (bname, _bval) in &node.bind {
+                    match bname.as_str() {
+                        "a" | "x" | "first" | "input1" | "in1" | "operand1" => {
+                            fixes.push((bname.clone(), first_name.to_string()));
+                        }
+                        "b" | "y" | "second" | "input2" | "in2" | "operand2" => {
+                            fixes.push((bname.clone(), second_name.to_string()));
+                        }
+                        // Cross-fix: if user wrote "left" but prim wants "lhs"
+                        "left" if is_lhs_rhs => {
+                            fixes.push((bname.clone(), "lhs".to_string()));
+                        }
+                        "right" if is_lhs_rhs => {
+                            fixes.push((bname.clone(), "rhs".to_string()));
+                        }
+                        "lhs" if is_left_right => {
+                            fixes.push((bname.clone(), "left".to_string()));
+                        }
+                        "rhs" if is_left_right => {
+                            fixes.push((bname.clone(), "right".to_string()));
+                        }
+                        _ => {}
+                    }
+                }
+                for (old_name, new_name) in fixes {
+                    if let Some(val) = node.bind.remove(&old_name) {
+                        node.bind.insert(new_name, val);
+                    }
+                }
+            }
+
+            // If primitive expects exactly one bind "value" and the user used something else
+            if expected_binds == vec!["value"] && !node.bind.contains_key("value") {
+                if node.bind.len() == 1 {
+                    // Single bind with wrong name → rename to "value"
+                    let (_, val) = node.bind.drain().next().unwrap();
+                    node.bind.insert("value".to_string(), val);
+                }
+            }
+
+            // Fix "cmd" bind for shell_dyn
+            if node.primitive == "shell_dyn" && !node.bind.contains_key("cmd") {
+                if node.bind.len() == 1 {
+                    let (_, val) = node.bind.drain().next().unwrap();
+                    node.bind.insert("cmd".to_string(), val);
+                }
+            }
+
+            // Fix shell_input binds
+            if node.primitive == "shell_input" {
+                let mut fixes: Vec<(String, String)> = Vec::new();
+                for (bname, _) in &node.bind {
+                    match bname.as_str() {
+                        "command" | "program" | "exec" => fixes.push((bname.clone(), "cmd".to_string())),
+                        "stdin" | "data" | "text" | "content" => fixes.push((bname.clone(), "input".to_string())),
+                        _ => {}
+                    }
+                }
+                for (old_name, new_name) in fixes {
+                    if let Some(val) = node.bind.remove(&old_name) {
+                        node.bind.insert(new_name, val);
+                    }
+                }
+            }
+
+            // Fix shell_pipe binds
+            if node.primitive == "shell_pipe" {
+                let mut fixes: Vec<(String, String)> = Vec::new();
+                for (bname, _) in &node.bind {
+                    match bname.as_str() {
+                        "a" | "first" | "from" | "source" | "input" | "cmd1" | "in" => {
+                            fixes.push((bname.clone(), "left".to_string()));
+                        }
+                        "b" | "second" | "to" | "dest" | "output" | "cmd2" | "out" => {
+                            fixes.push((bname.clone(), "right".to_string()));
+                        }
+                        _ => {}
+                    }
+                }
+                for (old_name, new_name) in fixes {
+                    if let Some(val) = node.bind.remove(&old_name) {
+                        node.bind.insert(new_name, val);
+                    }
+                }
+            }
+
+            // Fix vision / vision_prompt binds
+            if node.primitive == "vision" || node.primitive == "vision_prompt" {
+                let mut fixes: Vec<(String, String)> = Vec::new();
+                for (bname, _) in &node.bind {
+                    match bname.as_str() {
+                        "image" | "file" | "img" | "input" | "source" => {
+                            fixes.push((bname.clone(), "path".to_string()));
+                        }
+                        "question" | "ask" | "text" | "query" if node.primitive == "vision_prompt" => {
+                            fixes.push((bname.clone(), "prompt".to_string()));
+                        }
+                        _ => {}
+                    }
+                }
+                for (old_name, new_name) in fixes {
+                    if let Some(val) = node.bind.remove(&old_name) {
+                        node.bind.insert(new_name, val);
+                    }
+                }
+            }
+
+            // Fix fmt binds: "template" → "pattern", and numbered args
+            if node.primitive == "fmt" {
+                if node.bind.contains_key("template") && !node.bind.contains_key("pattern") {
+                    if let Some(val) = node.bind.remove("template") {
+                        node.bind.insert("pattern".to_string(), val);
+                    }
+                }
+            }
+
+            // Fix write_file / read_file binds
+            if node.primitive == "write_file" || node.primitive == "write_file_dyn" {
+                let mut fixes: Vec<(String, String)> = Vec::new();
+                for (bname, _) in &node.bind {
+                    match bname.as_str() {
+                        "data" | "text" | "body" | "value" | "input" => {
+                            fixes.push((bname.clone(), "content".to_string()));
+                        }
+                        "file" | "filename" | "dest" | "destination" | "output" => {
+                            fixes.push((bname.clone(), "path".to_string()));
+                        }
+                        _ => {}
+                    }
+                }
+                for (old_name, new_name) in fixes {
+                    if let Some(val) = node.bind.remove(&old_name) {
+                        node.bind.insert(new_name, val);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Auto-infer missing capabilities ──
+    let mut needed_caps: HashSet<String> = manifest.capabilities.iter().cloned().collect();
+    for node in &manifest.nodes {
+        if let Some(prim) = registry.get(&node.primitive) {
+            for effect in &prim.effects {
+                if *effect != "pure" {
+                    needed_caps.insert(effect.to_string());
+                }
+            }
+        }
+    }
+    manifest.capabilities = needed_caps.into_iter().collect();
+
+    manifest
+}
+
 /// Parse and validate a manifest string (JSON, .esc, or tape).
 pub fn validate(input: &str, registry: &Registry) -> Result<ValidComposition, ComposeError> {
     let manifest = parse_manifest(input)?;
+    let manifest = repair_manifest(manifest, registry);
 
     if manifest.app.len() > MAX_APP_BYTES {
         return Err(ComposeError::AppTooLong {
@@ -1352,6 +1870,69 @@ fn parse_tape_instruction(
                 parse_tape_ref(&args[0], line_no, slot_idx)?,
             );
             "http_get_dyn"
+        }
+        // ── Shell opcodes ───────────────────────────────────────
+        "sh" => {
+            expect(1)?;
+            params.insert("cmd".to_string(), ParamValue::Str(args[0].clone()));
+            "shell"
+        }
+        "sd" => {
+            expect(1)?;
+            bind.insert(
+                "cmd".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "shell_dyn"
+        }
+        "sp" => {
+            expect(2)?;
+            bind.insert(
+                "left".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "right".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "shell_pipe"
+        }
+        "si" => {
+            expect(2)?;
+            bind.insert(
+                "cmd".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "input".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "shell_input"
+        }
+        // ── Vision opcodes ──────────────────────────────────────
+        "vi" => {
+            expect(1)?;
+            bind.insert(
+                "path".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            "vision"
+        }
+        "vp" => {
+            expect(2)?;
+            bind.insert(
+                "path".to_string(),
+                parse_tape_ref(&args[0], line_no, slot_idx)?,
+            );
+            bind.insert(
+                "prompt".to_string(),
+                parse_tape_ref(&args[1], line_no, slot_idx)?,
+            );
+            "vision_prompt"
+        }
+        "ss2" => {
+            expect(0)?;
+            "screenshot"
         }
         _ => {
             return Err(ComposeError::TapeParse {
