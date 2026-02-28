@@ -6,6 +6,8 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::Command;
 
+const MAX_RETRIES: usize = 2;
+
 /// Build the system prompt with primitive catalog (compact, no grammar).
 fn system_prompt(registry: &Registry) -> String {
     let mut prims_text = String::new();
@@ -61,19 +63,88 @@ Rules:
 - "id": unique name per node
 - "use": primitive name from list below
 - "params": static values (numbers or strings)
-- "bind": connect to a prior node's id
+- "bind": connect to a prior node's id (bind values must be node IDs, not variable names)
 - Nodes execute in order. Binds must point to earlier nodes.
 - ONLY use primitives from the list below. Never invent new ones.
 - For system info (processes, memory, disk, network, etc), use "shell" with the right command.
 - When in doubt, use "shell" with a Linux command.
+- When the user provides a literal string value in the prompt, use const_str (not read_stdin).
+- Use read_stdin only when the user explicitly wants interactive input.
 
 Primitives:
 {prims_text}"#
     )
 }
 
+/// Detect whether the API base looks like an Ollama server.
+fn is_ollama(api_base: &str) -> bool {
+    let base = api_base.trim_end_matches('/');
+    base.contains(":11434") || base.ends_with("/ollama") || base.contains("ollama")
+}
+
+/// Call Ollama native API (/api/generate with format: "json").
+fn call_ollama(
+    api_base: &str,
+    model: &str,
+    system: &str,
+    user_msg: &str,
+) -> Result<String, String> {
+    let url = format!("{}/api/generate", api_base.trim_end_matches('/'));
+
+    let request = serde_json::json!({
+        "model": model,
+        "system": system,
+        "prompt": user_msg,
+        "format": "json",
+        "stream": false,
+        "options": {
+            "temperature": 0.2,
+            "num_predict": 2048,
+        },
+    });
+
+    let request_json = serde_json::to_string(&request).map_err(|e| format!("json error: {e}"))?;
+
+    let output = Command::new("curl")
+        .arg("-s")
+        .arg("--max-time")
+        .arg("120")
+        .arg("-X")
+        .arg("POST")
+        .arg(&url)
+        .arg("-H")
+        .arg("Content-Type: application/json")
+        .arg("-d")
+        .arg(&request_json)
+        .output()
+        .map_err(|e| format!("cannot run curl: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("curl failed: {stderr}"));
+    }
+
+    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("cannot parse Ollama response: {e}\nbody: {body}"))?;
+
+    // Ollama /api/generate returns {"response": "..."}
+    let content = parsed["response"].as_str().ok_or_else(|| {
+        if let Some(err) = parsed["error"].as_str() {
+            format!("Ollama error: {err}")
+        } else {
+            format!(
+                "unexpected Ollama response: {}",
+                serde_json::to_string_pretty(&parsed).unwrap_or_default()
+            )
+        }
+    })?;
+
+    Ok(content.to_string())
+}
+
 /// Call an OpenAI-compatible chat completion API via curl.
-fn call_llm(
+fn call_openai_compat(
     api_base: &str,
     api_key: &str,
     model: &str,
@@ -95,6 +166,8 @@ fn call_llm(
 
     let mut cmd = Command::new("curl");
     cmd.arg("-s")
+        .arg("--max-time")
+        .arg("120")
         .arg("-X")
         .arg("POST")
         .arg(&url)
@@ -119,11 +192,9 @@ fn call_llm(
     let parsed: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("cannot parse LLM response: {e}\nbody: {body}"))?;
 
-    // Extract content from OpenAI-format response
     let content = parsed["choices"][0]["message"]["content"]
         .as_str()
         .ok_or_else(|| {
-            // Check for error message
             if let Some(err) = parsed["error"]["message"].as_str() {
                 format!("LLM API error: {err}")
             } else {
@@ -135,6 +206,21 @@ fn call_llm(
         })?;
 
     Ok(content.to_string())
+}
+
+/// Unified LLM call — picks Ollama native or OpenAI-compatible based on URL.
+fn call_llm(
+    api_base: &str,
+    api_key: &str,
+    model: &str,
+    system: &str,
+    user_msg: &str,
+) -> Result<String, String> {
+    if is_ollama(api_base) {
+        call_ollama(api_base, model, system, user_msg)
+    } else {
+        call_openai_compat(api_base, api_key, model, system, user_msg)
+    }
 }
 
 /// Extract JSON from LLM response (strip markdown fences, leading text, etc.)
@@ -250,13 +336,96 @@ fn compose_and_run(
     }
 }
 
+/// Try to compose+run a prompt with retry loop on validation/compose errors.
+/// On failure, sends the error back to the LLM for self-correction.
+fn try_with_retries(
+    api_base: &str,
+    api_key: &str,
+    model: &str,
+    system: &str,
+    user_prompt: &str,
+    registry: &Registry,
+    verbose: bool,
+) -> Result<String, String> {
+    let mut last_manifest;
+    let mut attempt_prompt = user_prompt.to_string();
+
+    for attempt in 0..=MAX_RETRIES {
+        // Call LLM
+        let response = call_llm(api_base, api_key, model, system, &attempt_prompt)?;
+
+        if verbose {
+            eprintln!(
+                "\x1b[90m  LLM response (attempt {}, {} chars):\n{response}\x1b[0m",
+                attempt + 1,
+                response.len()
+            );
+        }
+
+        // Extract JSON
+        let manifest = match extract_json(&response) {
+            Some(j) => j,
+            None => {
+                if attempt < MAX_RETRIES {
+                    attempt_prompt = format!(
+                        "Your previous response was not valid JSON. Output ONLY a JSON manifest with no explanation.\n\nOriginal request: {user_prompt}"
+                    );
+                    if verbose {
+                        eprintln!(
+                            "\x1b[90m  retry {}: no JSON found, asking again\x1b[0m",
+                            attempt + 1
+                        );
+                    }
+                    continue;
+                }
+                return Err("no JSON manifest in LLM response after retries".to_string());
+            }
+        };
+
+        if verbose {
+            eprintln!(
+                "\x1b[90m  manifest (attempt {}):\n{manifest}\x1b[0m",
+                attempt + 1
+            );
+        }
+
+        last_manifest = manifest.clone();
+
+        // Try to compose and run
+        match compose_and_run(&manifest, registry, verbose) {
+            Ok(output) => return Ok(output),
+            Err(e) => {
+                if attempt < MAX_RETRIES {
+                    // Build retry prompt with the error
+                    attempt_prompt = format!(
+                        "Your manifest had an error: {e}\n\nFix it and output ONLY the corrected JSON manifest.\n\nOriginal request: {user_prompt}\n\nYour previous manifest:\n{last_manifest}"
+                    );
+                    if verbose {
+                        eprintln!("\x1b[33m  retry {}: {e}\x1b[0m", attempt + 1);
+                    }
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    Err("max retries exceeded".to_string())
+}
+
 /// Run the interactive REPL.
 pub fn run_repl(registry: &Registry, model: &str, api_base: &str, api_key: &str, verbose: bool) {
     let system = system_prompt(registry);
 
+    let api_mode = if is_ollama(api_base) {
+        "ollama"
+    } else {
+        "openai-compat"
+    };
+
     eprintln!("esc assist — type a request, get a program");
     eprintln!("  model: {model}");
-    eprintln!("  api: {api_base}");
+    eprintln!("  api: {api_base} ({api_mode})");
     if verbose {
         eprintln!(
             "  system prompt: {} chars, {} primitives",
@@ -264,6 +433,7 @@ pub fn run_repl(registry: &Registry, model: &str, api_base: &str, api_key: &str,
             registry.all().count()
         );
     }
+    eprintln!("  retries: {MAX_RETRIES}");
     eprintln!("  type 'quit' or Ctrl-D to exit\n");
 
     let stdin = io::stdin();
@@ -307,51 +477,20 @@ pub fn run_repl(registry: &Registry, model: &str, api_base: &str, api_key: &str,
             continue;
         }
 
-        // Call LLM
+        // Call LLM with retries
         eprint!("\x1b[90m  thinking...\x1b[0m");
         let _ = io::stderr().flush();
 
-        let response = match call_llm(api_base, api_key, model, &system, prompt) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("\r\x1b[K\x1b[31m  error: {e}\x1b[0m");
-                continue;
-            }
-        };
-
-        eprint!("\r\x1b[K"); // clear "thinking..."
-        let _ = io::stderr().flush();
-
-        if verbose {
-            eprintln!(
-                "\x1b[90m  LLM response ({} chars):\n{response}\x1b[0m",
-                response.len()
-            );
-        }
-
-        // Extract JSON manifest
-        let manifest = match extract_json(&response) {
-            Some(j) => j,
-            None => {
-                eprintln!("\x1b[31m  error: no JSON manifest in response\x1b[0m");
-                if verbose {
-                    eprintln!("\x1b[90m  raw: {response}\x1b[0m");
-                }
-                continue;
-            }
-        };
-
-        if verbose {
-            eprintln!("\x1b[90m  manifest:\n{manifest}\x1b[0m");
-        }
-
-        // Compose and run
-        match compose_and_run(&manifest, registry, verbose) {
+        match try_with_retries(api_base, api_key, model, &system, prompt, registry, verbose) {
             Ok(output) => {
+                eprint!("\r\x1b[K");
+                let _ = io::stderr().flush();
                 print!("{output}");
                 let _ = stdout.flush();
             }
             Err(e) => {
+                eprint!("\r\x1b[K");
+                let _ = io::stderr().flush();
                 eprintln!("\x1b[31m  {e}\x1b[0m");
             }
         }
@@ -370,37 +509,17 @@ pub fn run_once(
     let system = system_prompt(registry);
 
     if verbose {
+        let api_mode = if is_ollama(api_base) {
+            "ollama"
+        } else {
+            "openai-compat"
+        };
         eprintln!("model: {model}");
-        eprintln!("api: {api_base}");
+        eprintln!("api: {api_base} ({api_mode})");
         eprintln!("prompt: {prompt}");
     }
 
-    let response = match call_llm(api_base, api_key, model, &system, prompt) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    if verbose {
-        eprintln!("LLM response ({} chars):\n{response}", response.len());
-    }
-
-    let manifest = match extract_json(&response) {
-        Some(j) => j,
-        None => {
-            eprintln!("error: no JSON manifest in response");
-            eprintln!("raw: {response}");
-            std::process::exit(1);
-        }
-    };
-
-    if verbose {
-        eprintln!("manifest:\n{manifest}");
-    }
-
-    match compose_and_run(&manifest, registry, verbose) {
+    match try_with_retries(api_base, api_key, model, &system, prompt, registry, verbose) {
         Ok(output) => {
             print!("{output}");
         }

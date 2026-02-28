@@ -872,6 +872,19 @@ impl Registry {
         });
 
         self.add(Primitive {
+            id: "count_lines",
+            description: "Count lines in a string",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "text",
+                capability: "str",
+                required: true,
+            }],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
             id: "mod_num",
             description: "Modulo (remainder) of two numbers",
             params: vec![],
@@ -917,6 +930,118 @@ impl Registry {
             }],
             provides: vec!["num"],
 
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "neg",
+            description: "Negate a number",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "ceil",
+            description: "Ceiling of a number",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "round",
+            description: "Round a number to nearest integer",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "sqrt",
+            description: "Square root of a number",
+            params: vec![],
+            binds: vec![BindDef {
+                name: "value",
+                capability: "num",
+                required: true,
+            }],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "pow",
+            description: "Raise a number to a power",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "lhs",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "rhs",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "min_num",
+            description: "Minimum of two numbers",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "lhs",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "rhs",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["num"],
+            effects: vec!["pure"],
+        });
+
+        self.add(Primitive {
+            id: "max_num",
+            description: "Maximum of two numbers",
+            params: vec![],
+            binds: vec![
+                BindDef {
+                    name: "lhs",
+                    capability: "num",
+                    required: true,
+                },
+                BindDef {
+                    name: "rhs",
+                    capability: "num",
+                    required: true,
+                },
+            ],
+            provides: vec!["num"],
             effects: vec!["pure"],
         });
 

@@ -367,9 +367,17 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
             "replace_str" => "re",
             "split_count" => "sc",
             "split_nth" => "sn2",
+            "count_lines" => "cl",
             "mod_num" => "mo",
             "floor" => "fl",
             "abs" => "ab",
+            "neg" => "ng",
+            "ceil" => "ce",
+            "round" => "rn",
+            "sqrt" => "sq",
+            "pow" => "pw",
+            "min_num" => "mn",
+            "max_num" => "mx",
             "lt" => "lt",
             "read_stdin_all" => "ra",
             "append_file" => "af",
@@ -433,8 +441,8 @@ pub fn canonical_tape(comp: &ValidComposition) -> String {
         // Binds (sorted for determinism)
         if node.primitive_id != "write_file" {
             let prim_bind_order: Vec<&str> = match node.primitive_id.as_str() {
-                "add" | "sub" | "mul" | "div" | "gt" | "eq_num" | "and_bool" | "or_bool" | "mod_num" | "lt" => vec!["lhs", "rhs"],
-                "not_bool" | "to_string" | "parse_num" | "print_num" | "print_str" | "len_str" | "upper_str" | "lower_str" | "trim_str" | "floor" | "abs" => vec!["value", "text"],
+                "add" | "sub" | "mul" | "div" | "gt" | "eq_num" | "and_bool" | "or_bool" | "mod_num" | "lt" | "pow" | "min_num" | "max_num" => vec!["lhs", "rhs"],
+                "not_bool" | "to_string" | "parse_num" | "print_num" | "print_str" | "len_str" | "upper_str" | "lower_str" | "trim_str" | "floor" | "abs" | "neg" | "ceil" | "round" | "sqrt" | "count_lines" => vec!["value", "text"],
                 "concat" | "path_join" => vec!["left", "right"],
                 "select_num" | "select_str" => vec!["cond", "then", "else"],
                 "repeat_str" => vec!["text", "times"],
@@ -809,15 +817,24 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
         ("product", "mul"),
         ("divide", "div"),
         ("quotient", "div"),
-        ("modulo", "mod_op"),
-        ("remainder", "mod_op"),
+        ("modulo", "mod_num"),
+        ("remainder", "mod_num"),
         ("power", "pow"),
         ("exponent", "pow"),
-        ("format", "fmt"),
-        ("template", "fmt"),
-        ("sprintf", "fmt"),
-        ("lookup", "env_var"),
-        ("getenv", "env_var"),
+        ("negate", "neg"),
+        ("minimum", "min_num"),
+        ("min", "min_num"),
+        ("maximum", "max_num"),
+        ("max", "max_num"),
+        ("ceiling", "ceil"),
+        ("square_root", "sqrt"),
+        ("line_count", "count_lines"),
+        ("wc", "count_lines"),
+        ("format", "format_str"),
+        ("template", "format_str"),
+        ("sprintf", "format_str"),
+        ("lookup", "env_str"),
+        ("getenv", "env_str"),
         ("download", "http_get"),
         ("fetch", "http_get"),
         ("curl", "http_get"),
@@ -846,10 +863,14 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
     let numeric_ids: HashSet<String> = manifest.nodes.iter()
         .filter(|n| matches!(
             n.primitive.as_str(),
-            "const_num" | "add" | "sub" | "mul" | "div" | "mod_op" | "pow"
-            | "abs" | "neg" | "floor" | "ceil" | "round" | "sqrt" | "min" | "max"
-            | "clamp" | "to_num" | "parse_json_num" | "count_lines" | "str_len"
+            "const_num" | "add" | "sub" | "mul" | "div" | "mod_num" | "pow"
+            | "abs" | "neg" | "floor" | "ceil" | "round" | "sqrt"
+            | "min_num" | "max_num"
+            | "lt" | "gt" | "eq_num" | "parse_num"
+            | "arg_num" | "arg_count" | "len_str" | "split_count"
+            // Also catch common aliases before they're repaired
             | "num" | "number" | "sum" | "plus" | "minus" | "times" | "divide"
+            | "modulo" | "remainder" | "power" | "exponent"
         ))
         .map(|n| n.id.clone())
         .collect();
@@ -1007,8 +1028,8 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
                 }
             }
 
-            // Fix fmt binds: "template" → "pattern", and numbered args
-            if node.primitive == "fmt" {
+            // Fix format_str binds: "template" → "pattern", and numbered args
+            if node.primitive == "format_str" {
                 if node.bind.contains_key("template") && !node.bind.contains_key("pattern") {
                     if let Some(val) = node.bind.remove("template") {
                         node.bind.insert("pattern".to_string(), val);
@@ -1048,6 +1069,95 @@ fn repair_manifest(mut manifest: Manifest, registry: &Registry) -> Manifest {
             } else {
                 node.bind.retain(|k, _| expected_binds.contains(k.as_str()));
             }
+        }
+    }
+
+    // ── Fix dangling bind values ──
+    // LLMs sometimes use bind as variable assignment: read_file has bind: {"value": "f1"}
+    // and count_lines has bind: {"text": "f1"}. Here "f1" is NOT a node ID but a name the
+    // LLM invented. Build a map of these "variable names" → source node IDs, then fix any
+    // bind value that points to a non-existent node ID.
+    {
+        let node_ids: HashSet<String> = manifest.nodes.iter().map(|n| n.id.clone()).collect();
+
+        // Phase 1: collect "variable assignments" — bind values on source nodes (nodes whose
+        // primitive has no bind slots, like read_file, shell, const_*).
+        let mut var_to_node: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for node in &manifest.nodes {
+            let has_binds = registry.get(&node.primitive)
+                .map(|p| !p.binds.is_empty())
+                .unwrap_or(false);
+            if !has_binds {
+                // This is a source node — any bind values are LLM "variable names"
+                for (_bkey, bval) in &node.bind {
+                    if !node_ids.contains(bval) {
+                        var_to_node.insert(bval.clone(), node.id.clone());
+                    }
+                }
+            }
+        }
+
+        // Phase 2: for each bind value that doesn't match a node ID, check if it matches
+        // a "variable name" from phase 1, and fix it.
+        for node in &mut manifest.nodes {
+            for (_bkey, bval) in node.bind.iter_mut() {
+                if !node_ids.contains(bval.as_str()) {
+                    if let Some(real_id) = var_to_node.get(bval.as_str()) {
+                        *bval = real_id.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Auto-create const nodes for literal bind values ──
+    // LLMs sometimes write bind: {"content": "hello"} where "hello" is a literal string,
+    // not a node ID. Detect these and auto-insert const_str/const_num nodes.
+    {
+        let node_ids: HashSet<String> = manifest.nodes.iter().map(|n| n.id.clone()).collect();
+        let mut new_nodes: Vec<NodeSpec> = Vec::new();
+        let mut fixes: Vec<(usize, String, String)> = Vec::new(); // (node_idx, bind_key, new_node_id)
+
+        for (idx, node) in manifest.nodes.iter().enumerate() {
+            for (bkey, bval) in &node.bind {
+                if !node_ids.contains(bval.as_str()) && !new_nodes.iter().any(|n| n.id == *bval) {
+                    // This bind value doesn't match any node — treat it as a literal
+                    let new_id = format!("_lit_{}", new_nodes.len());
+                    // Try to parse as number, otherwise treat as string
+                    if let Ok(n) = bval.parse::<f64>() {
+                        let mut params = HashMap::new();
+                        params.insert("value".to_string(), crate::primitive::ParamValue::Number(n));
+                        new_nodes.push(NodeSpec {
+                            id: new_id.clone(),
+                            primitive: "const_num".to_string(),
+                            params,
+                            bind: HashMap::new(),
+                        });
+                    } else {
+                        let mut params = HashMap::new();
+                        params.insert("value".to_string(), crate::primitive::ParamValue::Str(bval.clone()));
+                        new_nodes.push(NodeSpec {
+                            id: new_id.clone(),
+                            primitive: "const_str".to_string(),
+                            params,
+                            bind: HashMap::new(),
+                        });
+                    }
+                    fixes.push((idx, bkey.clone(), new_id));
+                }
+            }
+        }
+
+        // Apply fixes: update bind values to point to new const nodes
+        for (idx, bkey, new_id) in &fixes {
+            if let Some(node) = manifest.nodes.get_mut(*idx) {
+                node.bind.insert(bkey.clone(), new_id.clone());
+            }
+        }
+        // Prepend new const nodes (they have no deps, must appear before consumers)
+        if !new_nodes.is_empty() {
+            new_nodes.append(&mut manifest.nodes);
+            manifest.nodes = new_nodes;
         }
     }
 

@@ -663,6 +663,10 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
                 let index = bind_var(node, "index", &vars);
                 writeln!(out, "    let {var}: String = {text}.split(&*{delim}).nth({index} as usize).unwrap_or(\"\").to_string();").unwrap();
             }
+            "count_lines" => {
+                let text = bind_var(node, "text", &vars);
+                writeln!(out, "    let {var}: f64 = {text}.lines().count() as f64;").unwrap();
+            }
             "mod_num" => {
                 let lhs = bind_var(node, "lhs", &vars);
                 let rhs = bind_var(node, "rhs", &vars);
@@ -675,6 +679,37 @@ pub fn emit_rust(comp: &ValidComposition) -> String {
             "abs" => {
                 let value = bind_var(node, "value", &vars);
                 writeln!(out, "    let {var}: f64 = {value}.abs();").unwrap();
+            }
+            "neg" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = -{value};").unwrap();
+            }
+            "ceil" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = {value}.ceil();").unwrap();
+            }
+            "round" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = {value}.round();").unwrap();
+            }
+            "sqrt" => {
+                let value = bind_var(node, "value", &vars);
+                writeln!(out, "    let {var}: f64 = {value}.sqrt();").unwrap();
+            }
+            "pow" => {
+                let lhs = bind_var(node, "lhs", &vars);
+                let rhs = bind_var(node, "rhs", &vars);
+                writeln!(out, "    let {var}: f64 = {lhs}.powf({rhs});").unwrap();
+            }
+            "min_num" => {
+                let lhs = bind_var(node, "lhs", &vars);
+                let rhs = bind_var(node, "rhs", &vars);
+                writeln!(out, "    let {var}: f64 = {lhs}.min({rhs});").unwrap();
+            }
+            "max_num" => {
+                let lhs = bind_var(node, "lhs", &vars);
+                let rhs = bind_var(node, "rhs", &vars);
+                writeln!(out, "    let {var}: f64 = {lhs}.max({rhs});").unwrap();
             }
             "lt" => {
                 let lhs = bind_var(node, "lhs", &vars);
